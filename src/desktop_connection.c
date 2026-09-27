@@ -34,7 +34,8 @@ int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out)
 
 static int fail(struct sophia_desktop_connection *c, int result, int error)
 {
-    if (c->fd >= 0) close(c->fd);
+    if (c->owns_fd && c->fd >= 0) close(c->fd);
+    c->owns_fd = 0;
     c->fd = -1;
     c->system_error = error;
     c->result = result;
@@ -67,7 +68,8 @@ int sophia_desktop_connection_begin(struct sophia_desktop_connection *c, const c
 {
     struct sockaddr_un address = { .sun_family = AF_UNIX };
     struct stat metadata;
-    if (!c || c->fd >= 0 || !valid_path(path)) return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
+    if (!c || c->owns_fd || !valid_path(path)) return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
+    c->fd = -1;
     c->system_error = 0;
     if (lstat(path, &metadata)) return fail(c, SOPHIA_DESKTOP_CONNECT_IO, errno);
     if (!S_ISSOCK(metadata.st_mode) || metadata.st_uid != geteuid())
@@ -78,7 +80,10 @@ int sophia_desktop_connection_begin(struct sophia_desktop_connection *c, const c
 #endif
     c->fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (c->fd < 0) return fail(c, SOPHIA_DESKTOP_CONNECT_IO, errno);
+    c->owns_fd = 1;
     if (connect(c->fd, (struct sockaddr *)&address, sizeof(address))) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return fail(c, SOPHIA_DESKTOP_CONNECT_RETRY, errno);
         if (errno != EINPROGRESS) return fail(c, SOPHIA_DESKTOP_CONNECT_IO, errno);
         c->result = SOPHIA_DESKTOP_CONNECTING;
         return c->result;
@@ -88,7 +93,7 @@ int sophia_desktop_connection_begin(struct sophia_desktop_connection *c, const c
 
 short sophia_desktop_connection_events(const struct sophia_desktop_connection *c)
 {
-    return c && c->fd >= 0 && c->result == SOPHIA_DESKTOP_CONNECTING ? POLLOUT : 0;
+    return c && c->owns_fd && c->fd >= 0 && c->result == SOPHIA_DESKTOP_CONNECTING ? POLLOUT : 0;
 }
 
 int sophia_desktop_connection_finish(struct sophia_desktop_connection *c, short revents)
@@ -96,7 +101,10 @@ int sophia_desktop_connection_finish(struct sophia_desktop_connection *c, short 
     int error = 0;
     socklen_t length = sizeof(error);
     if (!c) return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
-    if (c->fd < 0 || c->result != SOPHIA_DESKTOP_CONNECTING) return c->result;
+    if (!c->owns_fd || c->fd < 0)
+        return c->result < 0 || c->result == SOPHIA_DESKTOP_CONNECT_RETRY ?
+            c->result : SOPHIA_DESKTOP_CONNECT_ARGUMENT;
+    if (c->result != SOPHIA_DESKTOP_CONNECTING) return c->result;
     if (revents & POLLNVAL) return fail(c, SOPHIA_DESKTOP_CONNECT_IO, EBADF);
     if (!(revents & (POLLOUT | POLLERR | POLLHUP))) return c->result;
     if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &error, &length))
@@ -109,9 +117,10 @@ int sophia_desktop_connection_finish(struct sophia_desktop_connection *c, short 
 int sophia_desktop_connection_take(struct sophia_desktop_connection *c)
 {
     int fd;
-    if (!c || c->fd < 0 || c->result != SOPHIA_DESKTOP_CONNECTED) return -1;
+    if (!c || !c->owns_fd || c->fd < 0 || c->result != SOPHIA_DESKTOP_CONNECTED) return -1;
     fd = c->fd;
     c->fd = -1;
+    c->owns_fd = 0;
     c->result = SOPHIA_DESKTOP_CONNECT_ARGUMENT;
     return fd;
 }

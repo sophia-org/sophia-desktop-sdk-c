@@ -41,6 +41,7 @@ Headers install under `include/sophia-desktop`; pkg-config packages are
 `sophia-9p`, `sophia-desktop`, and optional `sophia-desktop-ipc`.
 The package name uses SDK terminology; `-dev` is reserved for a distribution's
 development package. No stable ABI or release is claimed for this snapshot.
+The machine-readable coverage declaration is [compatibility.json](compatibility.json).
 
 ## Contract and integration
 
