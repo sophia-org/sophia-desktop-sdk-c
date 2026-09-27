@@ -15,7 +15,10 @@ The bounded shell session (`sophia_shell_session.h`) provides atomic local queue
 admission, per-record custody tickets, paced retries, object acknowledgement
 barriers, uploads, and poll integration. Applications still consume events,
 fetch announced objects, acknowledge progress, and enforce role deadlines.
-The native launcher lifecycle layer is under development.
+The native launcher layer (`sophia_shell_native_session.h`) adds opening,
+allocation, candidate, focus and input acknowledgement state. Its unit tests
+use a scripted session; production-export validation of this layer is pending.
+Permit deadlines are advisory and cannot guarantee server validity at ingest.
 
 The record-level API and explicit nonblocking connection helper
 (`sophia_desktop_connection.h`) are also available. The helper
