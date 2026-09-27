@@ -1,0 +1,35 @@
+#ifndef SOPHIA_DESKTOP_CONNECTION_H
+#define SOPHIA_DESKTOP_CONNECTION_H
+#include <poll.h>
+
+enum sophia_desktop_wire { SOPHIA_DESKTOP_FILES = 1, SOPHIA_DESKTOP_IPC = 2 };
+enum sophia_desktop_connect_result {
+    SOPHIA_DESKTOP_CONNECTED = 0,
+    SOPHIA_DESKTOP_CONNECTING = 1,
+    SOPHIA_DESKTOP_CONNECT_ARGUMENT = -1,
+    SOPHIA_DESKTOP_CONNECT_IO = -2,
+    SOPHIA_DESKTOP_CONNECT_PEER = -3
+};
+struct sophia_desktop_endpoint {
+    enum sophia_desktop_wire wire;
+    /* Borrowed from the selection arguments/environment. */
+    const char *path;
+};
+/* Exactly one endpoint must be supplied, absolute and nonempty. A supplied
+ * empty value is an error. Selection never tries the other backend. */
+int sophia_desktop_select_shell(const char *files, const char *ipc,
+                                struct sophia_desktop_endpoint *out);
+int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out);
+
+/* Initialize to { .fd = -1 } before begin. The helper owns fd until take or
+ * close. No waits or endpoint discovery: caller polls and enforces a deadline.
+ * Unix sockets, O_NONBLOCK, FD_CLOEXEC, same effective UID required.
+ * Same-UID authentication does not prove supervisor admission. */
+struct sophia_desktop_connection { int fd, result, system_error; };
+int sophia_desktop_connection_begin(struct sophia_desktop_connection *, const char *path);
+short sophia_desktop_connection_events(const struct sophia_desktop_connection *);
+int sophia_desktop_connection_finish(struct sophia_desktop_connection *, short revents);
+/* Returns -1 unless connected; a successful take transfers ownership. */
+int sophia_desktop_connection_take(struct sophia_desktop_connection *);
+void sophia_desktop_connection_close(struct sophia_desktop_connection *);
+#endif
