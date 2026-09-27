@@ -3,13 +3,36 @@
 Native C99 libraries for Sophia desktop components. This repository builds
 without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
+## SDK scope
+
+One desktop SDK per language covers Sophia's WM, shell, output and admin/control
+roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
+rules; they are not separate SDK repositories. Nim uses this SDK through thin C
+bindings. The target is the complete functionality of the former IPC APIs over
+Sophia's admitted file contracts, without IPC fallback or private 9P opcodes.
+Existing compatibility code is transitional, not part of that target.
+
+[COVERAGE.md](COVERAGE.md) distinguishes that requirement from implemented and
+tested support. A missing server file contract is a migration gap, not permission
+to tunnel the old socket protocol through a file.
+
 ## Current coverage
 
 The development snapshot provides a generic nonblocking 9P2000.L client and
 shell file records and sessions for bar (r6), native launcher (r7), and persistent
 catalog/dock (r8). The existing shell IPC backend remains available for rollback
-and comparison. The imported WM socket codec is compatibility code; WM files,
-output authority, and admin SDK modules are not implemented here yet.
+and comparison. The imported WM socket codec is compatibility code.
+WM file record codecs are available; the WM session, output authority and admin
+client modules are not implemented here yet.
+
+The WM file codec (`sophia_wm_files.h`) covers API-1 envelopes, typed scalar
+bodies, cycle causes, complete section bounds and negotiated section disclosure.
+`sophia_wm_records.h` supplies all 22 neutral fixed row codecs without socket
+framing. These enforce structural wire rules; Session still validates scene,
+geometry, policy phase and authority. The focused codec test uses literal
+bodies and the pinned golden row corpus, not a live export. Regenerate fixed
+rows with `python3 tools/generate_wm_rows.py`; Python is not a library build
+dependency. `compatibility.json` keeps `wm_files=false` until the WM client gate.
 
 The bounded shell session (`sophia_shell_session.h`) provides atomic local queue
 admission, per-record custody tickets, paced retries, object acknowledgement
