@@ -11,9 +11,14 @@ catalog/dock (r8). The existing shell IPC backend remains available for rollback
 and comparison. The imported WM socket codec is compatibility code; WM files,
 output authority, and admin SDK modules are not implemented here yet.
 
-Reusable launcher lifecycle, queueing, connection bootstrap and event-loop APIs
-are under development. The record-level session API and explicit nonblocking
-connection helper (`sophia_desktop_connection.h`) are available now. The helper
+The bounded shell session (`sophia_shell_session.h`) provides atomic local queue
+admission, per-record custody tickets, paced retries, object acknowledgement
+barriers, uploads, and poll integration. Applications still consume events,
+fetch announced objects, acknowledge progress, and enforce role deadlines.
+The native launcher lifecycle layer is under development.
+
+The record-level API and explicit nonblocking connection helper
+(`sophia_desktop_connection.h`) are also available. The helper
 requires exactly one of Session's two shell socket variables, authenticates the
 same-user peer and transfers its fd to the chosen backend. The caller polls and
 enforces a connection deadline; there is no automatic backend fallback. See
