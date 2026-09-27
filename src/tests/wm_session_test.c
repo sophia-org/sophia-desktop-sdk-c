@@ -278,6 +278,53 @@ static void idle_partial_and_clock_deadlines(void) {
   assert(sophia_ws_dispatch(r->session, POLLIN, 65536, r->now) < 0);
   wr_drop(r);
 }
+static void complete_held_event_outlives_assembly_deadline(void) {
+  struct wm_rig *r = wr_new();
+  const struct sophia_wf_record *event;
+  wr_ready(r);
+  wp_outcome(&r->peer, 91);
+  steps(r, 4);
+  assert(!sophia_ws_event(r->session, &event) &&
+         event->value.configuration_outcome.transaction == 91);
+  assert(sophia_ws_timeout(r->session, r->now) == -1);
+  r->now += 20000;
+  assert(!sophia_ws_dispatch(r->session, POLLIN | POLLOUT, 65536, r->now));
+  assert(sophia_ws_state(r->session) == SOPHIA_WS_READY &&
+         !sophia_ws_event(r->session, &event) &&
+         event->value.configuration_outcome.transaction == 91);
+  assert(!sophia_ws_consume(r->session));
+  steps(r, 4);
+  assert(r->peer.acked == 3);
+  wr_drop(r);
+}
+static void partial_event_deadline_runs_during_pending_ack(void) {
+  struct wm_rig *r = wr_new();
+  struct sophia_ws_obligations before, later;
+  const struct sophia_wf_record *event;
+  wr_ready(r);
+  wp_outcome(&r->peer, 92);
+  steps(r, 4);
+  assert(!sophia_ws_event(r->session, &event));
+  r->peer.ack_hold = 1;
+  assert(!sophia_ws_consume(r->session));
+  steps(r, 4);
+  assert(!sophia_ws_obligations(r->session, &before));
+  assert(r->peer.acked == 3 && before.acked == 2 && !before.deadline_ms);
+  r->peer.event_chunk = 1;
+  wp_outcome(&r->peer, 93);
+  steps(r, 2);
+  assert(!sophia_ws_obligations(r->session, &before));
+  assert(before.deadline_ms > r->now && before.acked == 2);
+  r->now += 1000;
+  steps(r, 2); /* More partial bytes do not renew the record deadline. */
+  assert(!sophia_ws_obligations(r->session, &later));
+  assert(later.deadline_ms == before.deadline_ms && later.acked == 2);
+  r->now = before.deadline_ms;
+  assert(sophia_ws_dispatch(r->session, POLLIN | POLLOUT, 65536, r->now) ==
+         SOPHIA_9P_CLOSED);
+  assert(sophia_ws_state(r->session) == SOPHIA_WS_CLOSED);
+  wr_drop(r);
+}
 static void deadline_never_sends_and_close_classifies(void) {
   struct wm_rig *r = wr_new();
   struct sophia_wf_record value = {0};
@@ -477,6 +524,8 @@ int main(void) {
   RUN(snapshot_is_complete_bound_and_pin_released);
   RUN(mismatched_snapshot_refuses);
   RUN(idle_partial_and_clock_deadlines);
+  RUN(complete_held_event_outlives_assembly_deadline);
+  RUN(partial_event_deadline_runs_during_pending_ack);
   RUN(deadline_never_sends_and_close_classifies);
   RUN(bad_limits_and_negotiation_refuse);
   RUN(impossible_offer_refuses_before_submission);
