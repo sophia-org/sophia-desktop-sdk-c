@@ -507,12 +507,62 @@ static void presentation_receipt_requires_negotiated_capability(void) {
     wr_drop(r);
   }
 }
+static void local_work_wakes_a_poll_first_caller(void) {
+  unsigned kind, missed = 0;
+  for (kind = 0; kind < 3; ++kind) {
+    struct wm_rig *r = wr_new();
+    const struct sophia_wf_record *event;
+    struct pollfd fd;
+    uint64_t ticket = 0;
+    int wait;
+    wr_ready(r);
+    if (kind == 1)
+      wp_outcome(&r->peer, 77);
+    else if (kind == 2)
+      snapshot_and_cycle(r);
+    steps(r, 20);
+    /* No peer bytes or queued client writes can hide a missing local wakeup. */
+    fd = (struct pollfd){sophia_ws_poll_fd(r->session),
+                         sophia_ws_poll_events(r->session), 0};
+    assert(!(fd.events & POLLOUT) && poll(&fd, 1, 0) == 0);
+    assert(sophia_ws_timeout(r->session, r->now) == -1);
+    if (kind == 0)
+      ticket = wr_submit(r, 1);
+    else if (kind == 1) {
+      assert(!sophia_ws_event(r->session, &event));
+      assert(!sophia_ws_consume(r->session));
+    } else
+      assert(!sophia_ws_snapshot(r->session, r->now + 1000));
+    wait = sophia_ws_timeout(r->session, r->now);
+    if (wait != 0) {
+      fprintf(stderr, "local work kind=%u: poll timeout=%d, expected 0\n",
+              kind, wait);
+      ++missed;
+    }
+    /* One dispatch queues the work; ordinary wire readiness then drives it.
+     * An acknowledged idle session must return to sleeping, not spin. */
+    assert(!sophia_ws_dispatch(r->session, 0, 65536, r->now));
+    assert(sophia_ws_poll_events(r->session) & POLLOUT);
+    steps(r, 40);
+    if (kind == 0)
+      assert(wr_custody(r, ticket) == SOPHIA_WS_SUBMITTED);
+    else if (kind == 1)
+      assert(r->peer.acked == 3);
+    else
+      assert(!sophia_ws_snapshot_result(r->session, &event));
+    assert(sophia_ws_timeout(r->session, r->now) == -1);
+    assert(!(sophia_ws_poll_events(r->session) & POLLOUT));
+    wr_drop(r);
+  }
+  assert(!missed);
+}
 int main(void) {
 #define RUN(test)                                                              \
   do {                                                                         \
     test_case = #test;                                                         \
     test();                                                                    \
   } while (0)
+  RUN(local_work_wakes_a_poll_first_caller);
   RUN(bootstrap_and_partial_writes);
   RUN(submitted_and_error_both_orders);
   RUN(ealready_without_custody_is_unknown);
