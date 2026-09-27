@@ -415,6 +415,38 @@ static void full_retained_journal_still_observes_submitted(void) {
          sophia_ws_event(r->session, &event) == SOPHIA_9P_AGAIN);
   wr_drop(r);
 }
+static void presentation_receipt_requires_negotiated_capability(void) {
+  unsigned enabled;
+  for (enabled = 0; enabled < 2; ++enabled) {
+    uint64_t caps = WP_CAPS;
+    struct wm_rig *r;
+    struct sophia_wf_record receipt = {0};
+    const struct sophia_wf_record *event = NULL;
+    if (!enabled)
+      caps &= ~(SOPHIA_WF_CAP_SURFACE_INSTANCES |
+                SOPHIA_WF_CAP_PRESENTATION_ACTIONS);
+    r = wr_new_caps(caps);
+    wr_ready(r);
+    receipt.header.kind = SOPHIA_WF_PRESENTATION_RECEIPT;
+    receipt.value.presentation_receipt =
+        (struct sophia_wf_presentation_receipt){1, 2, 3, 4, 5, 1};
+    /* The peer encodes a structurally valid receipt even when disclosure was
+     * not negotiated. Admission must fail before an application sees it. */
+    wp_record(&r->peer, &receipt);
+    if (enabled) {
+      steps(r, 20);
+      assert(!sophia_ws_event(r->session, &event));
+      assert(event->header.kind == SOPHIA_WF_PRESENTATION_RECEIPT &&
+             event->value.presentation_receipt.presentation_epoch == 5);
+      assert(!sophia_ws_consume(r->session));
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+      assert(sophia_ws_event(r->session, &event) != 0 && event == NULL);
+    }
+    wr_drop(r);
+  }
+}
 int main(void) {
 #define RUN(test)                                                              \
   do {                                                                         \
@@ -438,6 +470,7 @@ int main(void) {
   RUN(ack_faults_and_revocation_keep_custody);
   RUN(snapshot_retry_is_paced_and_truncation_refuses);
   RUN(full_retained_journal_still_observes_submitted);
+  RUN(presentation_receipt_requires_negotiated_capability);
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");
