@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS };
+enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS, F_UPLOAD };
 /* ACCEPT: Rwrite then Submitted. SILENT: Rwrite only. HOLD: no reply.
  * ERROR: Rlerror. CUSTODY: Submitted journaled while the Rwrite is held. */
 enum { P_ACCEPT, P_SILENT, P_HOLD, P_ERROR, P_CUSTODY };
@@ -34,8 +34,10 @@ struct peer {
     uint64_t event_offset;
     uint8_t staged[8192], last_submit[24];
     size_t staged_used;
-    unsigned tx_writes, submits, acks;
+    unsigned tx_writes, submits, acks, upload_bytes;
     uint64_t outputs_generation;
+    /* Rlerror for walks of outputs or upload/N: node-specific failures. */
+    uint32_t object_error, upload_error;
 };
 static inline uint64_t peer_get(const uint8_t *p, size_t n)
 {
@@ -120,6 +122,21 @@ static inline void peer_published(struct peer *p, uint16_t kind, uint64_t genera
     r.value.object_published.object_kind = kind;
     r.value.object_published.generation = generation;
     r.value.object_published.qid = qid;
+    peer_record(p, &r);
+}
+static inline void peer_resource_status(struct peer *p, const struct sophia_sf_resource_begin *b,
+                                        uint16_t status)
+{
+    struct sophia_sf_record r = {0};
+    struct sophia_sf_resource_status *v = &r.value.resource_status;
+    r.header.kind = SOPHIA_SF_RESOURCE_STATUS;
+    v->transaction = b->transaction;
+    v->grant_connection_epoch = b->grant_connection_epoch;
+    v->grant_content_epoch = b->grant_content_epoch;
+    v->resource_id = b->resource_id;
+    v->resource_generation = b->resource_generation;
+    v->status = status;
+    v->admitted_bytes = status == 2 ? b->total_bytes : 0;
     peer_record(p, &r);
 }
 static inline size_t peer_object(struct peer *p, uint8_t file, uint8_t *b, size_t capacity)
@@ -264,17 +281,28 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
         peer_send(p, 105, tag, b, 13);
         return;
     case 110:
-        assert(peer_get(body + 8, 2) == 1);
+        count = (uint32_t)peer_get(body + 8, 2);
         n = (size_t)peer_get(body + 10, 2);
         file = F_NONE;
-        for (i = 2; i < sizeof(names) / sizeof(names[0]); i++)
+        if (count == 2 && n == 6 && !memcmp(body + 12, "upload", 6))
+            file = F_UPLOAD;
+        for (i = 2; count == 1 && i < sizeof(names) / sizeof(names[0]); i++)
             if (strlen(names[i]) == n && !memcmp(body + 12, names[i], n))
                 file = (uint8_t)i;
         assert(file != F_NONE);
+        if (file == F_OUTPUTS && p->object_error) {
+            peer_error(p, tag, p->object_error);
+            return;
+        }
+        if (file == F_UPLOAD && p->upload_error) {
+            peer_error(p, tag, p->upload_error);
+            return;
+        }
         peer_bind(p, (uint32_t)peer_get(body + 4, 4), file);
-        peer_put(b, 1, 2);
-        peer_qid(b + 2, file);
-        peer_send(p, 111, tag, b, 15);
+        peer_put(b, count, 2);
+        for (i = 0; i < count; i++)
+            peer_qid(b + 2 + 13 * i, file);
+        peer_send(p, 111, tag, b, 2 + 13 * count);
         return;
     case 12:
         peer_qid(b, peer_file(p, (uint32_t)peer_get(body, 4)));
@@ -328,6 +356,9 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
                 p->tx_count = count;
             } else
                 peer_count(p, tag, count);
+        } else if (file == F_UPLOAD) {
+            p->upload_bytes += count;
+            peer_count(p, tag, count);
         } else if (file == F_SUBMIT) {
             assert(count == 24);
             peer_submit(p, tag, body + 16);

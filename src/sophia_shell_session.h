@@ -103,8 +103,9 @@ short sophia_ss_poll_events(const struct sophia_ss *);
 /* -1, or milliseconds until a submit deferred by EAGAIN may be retried. It
  * reports nothing about health: see obligations. */
 int sophia_ss_timeout(const struct sophia_ss *, uint64_t now_ms);
-/* One service pass: at most byte_budget bytes each way; POLLNVAL ends the
- * session as CLOSED. A submit refused with
+/* One service pass: bounded (at most byte_budget bytes and 32 syscalls each
+ * way) and nonblocking whatever revents says; revents is used only for
+ * POLLNVAL, which ends the session as CLOSED. A submit refused with
  * EAGAIN is retried with the same epoch, id and staged transaction, never in
  * the pass that saw the refusal: only after event consume or ack progress, or
  * once now_ms reaches its backoff deadline (4 ms doubling to 256 ms). now_ms
@@ -139,7 +140,8 @@ int sophia_ss_commit(struct sophia_ss *, struct sophia_ss_reservation *,
                      const struct sophia_sf_record *records, size_t count, uint64_t *first_ticket);
 int sophia_ss_cancel(struct sophia_ss *, struct sophia_ss_reservation *);
 /* ARGUMENT for an unissued ticket. error is the submit Rlerror of a REFUSED
- * ticket, else 0; it may be NULL. */
+ * ticket (any valid Rlerror except EAGAIN, EALREADY and ESTALE, unknown errno
+ * included, with no meaning attached), else 0; it may be NULL. */
 int sophia_ss_outcome(const struct sophia_ss *, uint64_t ticket, enum sophia_ss_outcome *,
                       uint32_t *error);
 /* Application events in order. Negotiated, Refused and Submitted are consumed

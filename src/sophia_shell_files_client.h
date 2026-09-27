@@ -10,8 +10,10 @@ enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK };
 /* Progress of the most recent submission. STAGED: its Tsubmit is not queued or
  * outstanding (transaction writes, or deferred after EAGAIN, which transferred
  * nothing). ISSUED: a Tsubmit is queued, outstanding or accepted without an
- * observed Submitted. CUSTODIED: Submitted observed. REFUSED: a definitive
- * Rlerror on submit; nothing was journaled. */
+ * observed Submitted. CUSTODIED: Submitted observed. REFUSED: after
+ * negotiation, any valid Rlerror on submit other than EAGAIN (11), EALREADY
+ * (114) or ESTALE (116), unknown errno values included; submit_error holds the
+ * errno with no further meaning attached. Nothing was journaled. */
 enum sophia_sf_submission {
     SOPHIA_SF_SUBMISSION_NONE,
     SOPHIA_SF_SUBMISSION_STAGED,
@@ -79,8 +81,10 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *, const void *, size_
 /* id is the latest submission (0 before any). Negotiate is submission 1. */
 int sophia_sf_client_submission(const struct sophia_sf_client *, uint64_t *id,
                                 enum sophia_sf_submission *);
-/* A submit refused with EAGAIN waits, unsent, until this call; the retry
- * reuses its epoch, id and staged transaction. ARGUMENT when none waits. */
+/* API change: a submit refused with EAGAIN is no longer re-sent by service.
+ * It waits, unsent (submit_wait), until this call, which callers make only
+ * after event/ack progress or a bounded backoff. The retry reuses its epoch,
+ * id and staged transaction. ARGUMENT when none waits. */
 int sophia_sf_client_submit_retry(struct sophia_sf_client *);
 /* Borrow until event_consume. Consumption advances local processing; ack is a
  * separate explicit operation releasing only server journal retention. */

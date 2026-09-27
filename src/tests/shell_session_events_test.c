@@ -140,6 +140,153 @@ static void poll_reports_queued_output(void)
     assert(!sophia_ss_poll_events(&r.s));
     rig_close(&r);
 }
+/* One 1x1 resource: the vector limits allow exactly one 4-byte chunk. */
+static struct sophia_sf_resource_begin resource(const struct rig *r, uint64_t id)
+{
+    struct sophia_sf_resource_begin b = {0};
+    b.transaction = 70 + id;
+    b.grant_connection_epoch = PEER_EPOCH;
+    b.grant_content_epoch = sophia_ss_limits(&r->s)->grant_content_epoch;
+    b.resource_id = id;
+    b.resource_generation = 1;
+    b.width_px = b.height_px = 1;
+    b.rendered_scale_numerator = b.rendered_scale_denominator = b.pixel_format = 1;
+    b.chunk_count = 1;
+    b.total_bytes = 4;
+    return b;
+}
+static void consume_status(struct rig *r, const struct sophia_sf_resource_begin *b,
+                           uint16_t status)
+{
+    const struct sophia_sf_record *e = NULL;
+    unsigned i;
+    peer_resource_status(&r->p, b, status);
+    for (i = 0; i < 8 && sophia_ss_event(&r->s, &e); i++)
+        rig_step(r);
+    assert(e && e->header.kind == SOPHIA_SF_RESOURCE_STATUS);
+    assert(e->value.resource_status.resource_id == b->resource_id);
+    assert(e->value.resource_status.status == status);
+    assert(!sophia_ss_consume(&r->s));
+    rig_run(r, 6);
+}
+/* Upload records wait for the single submission slot: BUSY changes nothing. */
+#define UPLOAD(r, call)                                                                            \
+    do {                                                                                           \
+        unsigned tries_;                                                                           \
+        int status_ = SOPHIA_9P_BUSY;                                                              \
+        for (tries_ = 0; tries_ < 16 && status_ == SOPHIA_9P_BUSY; tries_++) {                     \
+            status_ = (call);                                                                      \
+            if (status_ == SOPHIA_9P_BUSY)                                                         \
+                rig_step(r);                                                                       \
+        }                                                                                          \
+        assert(!status_);                                                                          \
+    } while (0)
+static void uploads(void)
+{
+    struct rig r;
+    struct sophia_sf_record request = rig_request(1);
+    struct sophia_sf_resource_begin begin;
+    struct sophia_ss_reservation v;
+    enum sophia_ss_outcome o;
+    uint8_t pixels[4] = {1, 2, 3, 4};
+    uint32_t error = 0;
+    uint64_t first, ticket, end;
+    rig_ready(&r, &rig_config);
+    begin = resource(&r, 1);
+    /* Upload records share the one submission slot, behind the queue. */
+    assert(!sophia_ss_reserve(&r.s, 1, 160, &v));
+    assert(sophia_ss_upload_begin(&r.s, begin, &ticket) == SOPHIA_9P_BUSY);
+    assert(!sophia_ss_cancel(&r.s, &v));
+    r.p.policy = P_HOLD;
+    assert(!sophia_ss_submit(&r.s, &request, 1, &first));
+    rig_run(&r, 6);
+    assert(r.p.submit_held);
+    assert(sophia_ss_upload_begin(&r.s, begin, &ticket) == SOPHIA_9P_BUSY);
+    peer_answer_submit(&r.p, 0);
+    peer_submitted(&r.p, rig_last_id(&r), SOPHIA_SF_ALLOCATION_REQUEST);
+    assert(rig_until(&r, first, 16) == SOPHIA_SS_SUBMITTED);
+    r.p.policy = P_ACCEPT;
+
+    /* Begin, one chunk, End: each record is a ticket with custody. */
+    UPLOAD(&r, sophia_ss_upload_begin(&r.s, begin, &ticket));
+    assert(ticket == first + 1);
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    assert(sophia_ss_upload_pending(&r.s) && !sophia_ss_upload_ready(&r.s));
+    consume_status(&r, &begin, 1);
+    assert(sophia_ss_upload_ready(&r.s));
+    assert(!sophia_ss_upload_chunk(&r.s, pixels, sizeof(pixels)));
+    rig_run(&r, 4);
+    assert(r.p.upload_bytes == 4 && sophia_ss_upload_ready(&r.s));
+    UPLOAD(&r, sophia_ss_upload_end(&r.s, 90, &end));
+    assert(end == ticket + 1);
+    assert(rig_until(&r, end, 32) == SOPHIA_SS_SUBMITTED);
+    consume_status(&r, &begin, 2);
+    assert(!sophia_ss_upload_pending(&r.s));
+
+    /* Begin then Cancel. */
+    begin = resource(&r, 2);
+    UPLOAD(&r, sophia_ss_upload_begin(&r.s, begin, &ticket));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    consume_status(&r, &begin, 1);
+    assert(sophia_ss_upload_ready(&r.s));
+    UPLOAD(&r, sophia_ss_upload_cancel(&r.s, 91, &end));
+    assert(end == ticket + 1);
+    assert(rig_until(&r, end, 32) == SOPHIA_SS_SUBMITTED);
+    consume_status(&r, &begin, 4);
+    assert(!sophia_ss_upload_pending(&r.s) && r.p.upload_bytes == 4);
+
+    /* A refused Begin leaves nothing for the writer to wait on. */
+    r.p.policy = P_ERROR;
+    r.p.error = 22;
+    r.p.once = 1;
+    begin = resource(&r, 3);
+    UPLOAD(&r, sophia_ss_upload_begin(&r.s, begin, &ticket));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_REFUSED);
+    assert(!sophia_ss_outcome(&r.s, ticket, &o, &error) && error == 22);
+    rig_run(&r, 6);
+    assert(!sophia_ss_upload_pending(&r.s) && sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+
+    /* ESTALE on an upload slot fails that upload, not the session. */
+    r.p.upload_error = 116;
+    begin = resource(&r, 4);
+    UPLOAD(&r, sophia_ss_upload_begin(&r.s, begin, &ticket));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    consume_status(&r, &begin, 1);
+    assert(!sophia_ss_upload_pending(&r.s) && !sophia_ss_upload_ready(&r.s));
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+    assert(!r.s.files.stale && r.s.files.remote_error == 116);
+    /* The session still carries records. */
+    assert(!sophia_ss_submit(&r.s, &request, 1, &first));
+    assert(rig_until(&r, first, 32) == SOPHIA_SS_SUBMITTED);
+    rig_close(&r);
+}
+/* ESTALE on an object fid fails that fetch; on events it ends the session. */
+static void object_stale_is_not_terminal(void)
+{
+    struct rig r;
+    const struct sophia_sf_record *object = NULL;
+    unsigned i;
+    int status = SOPHIA_9P_BUSY;
+    rig_ready(&r, &rig_config);
+    r.p.object_error = 116;
+    assert(!sophia_ss_object(&r.s, SOPHIA_SF_OUTPUTS, 0, 0));
+    for (i = 0; i < 16 && status == SOPHIA_9P_BUSY; i++) {
+        rig_step(&r);
+        status = sophia_ss_object_result(&r.s, &object);
+    }
+    assert(status == SOPHIA_9P_INVALID);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+    assert(!r.s.files.stale && r.s.files.remote_error == 116);
+    r.p.object_error = 0;
+    r.p.outputs_generation = 1;
+    object = fetch(&r, SOPHIA_SF_OUTPUTS, 0, 0);
+    assert(object->value.outputs.facts_generation == 1);
+    r.p.event_error = 116;
+    peer_answer_events(&r.p);
+    rig_step(&r);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_STALE && r.s.files.stale);
+    rig_close(&r);
+}
 static void negotiation_refusal(void)
 {
     struct rig r;
@@ -182,8 +329,11 @@ int main(void)
     ack_bounded_by_unfetched_object();
     superseded_announcement_keeps_bound();
     poll_reports_queued_output();
+    uploads();
+    object_stale_is_not_terminal();
     negotiation_refusal();
     outcome_eviction();
-    puts("shell session: ack bounds, object obligations, poll, refusal, outcome ring passed");
+    puts("shell session: ack bounds, object obligations, poll, uploads, node ESTALE, refusal, "
+         "outcome ring passed");
     return 0;
 }

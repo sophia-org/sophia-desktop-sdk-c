@@ -138,7 +138,9 @@ static int submission_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             c->submit_stage = 4;
             return 0;
         }
-        /* A definitive refusal journals nothing; clunk discards the staging. */
+        /* Any other valid Rlerror, unknown errno included, is a definitive
+         * refusal with no meaning beyond its errno: nothing was journaled,
+         * and clunk discards the staging. */
         if (r->error != 114 && r->error != 116 && c->negotiated && !c->submitted) {
             uint64_t kind = sf_get(c->tx + 6, 2);
             c->submit_sent = 0;
