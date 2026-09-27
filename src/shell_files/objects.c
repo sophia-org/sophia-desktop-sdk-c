@@ -92,6 +92,8 @@ int sf_session_object_reply(struct sophia_sf_client *c, const struct sophia_9p_r
         c->object_iounit = r->iounit;
         if (c->object_qid && c->object_qid != r->qid.path)
             return object_finish(c, SOPHIA_9P_AGAIN);
+        /* Record the pinned qid so a result can be matched to its announcement. */
+        c->object_qid = r->qid.path;
         c->object_stage = 3;
         return 0;
     }
