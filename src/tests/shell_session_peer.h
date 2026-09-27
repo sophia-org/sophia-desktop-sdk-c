@@ -448,6 +448,7 @@ static inline void rig_start(struct rig *r, const struct sophia_ss_config *confi
     r->storage = malloc(bytes);
     assert(r->storage);
     r->p.fd = r->fd[1];
+    r->p.require_custody_ack = 1;
     r->now = 1000;
     assert(!sophia_ss_open_fd(&r->s, r->fd[0], config, r->storage, bytes));
     assert(sophia_ss_state(&r->s) == SOPHIA_SS_NEGOTIATING);
