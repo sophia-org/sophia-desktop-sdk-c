@@ -9,7 +9,9 @@ int sophia_ss_event(struct sophia_ss *s, const struct sophia_sf_record **out)
 /* ObjectPublished becomes an ack obligation for its kind when consumed. A
  * newer announcement of that kind replaces the object owed but keeps the
  * earliest bound: nothing from the first unfetched announcement on may be
- * acknowledged until the newest one is fetched. */
+ * acknowledged until the newest one is fetched. When the announced object was
+ * already fetched and verified (peek, fetch, then consume), it is discharged
+ * with every older announcement it supersedes. */
 int sophia_ss_consume(struct sophia_ss *s)
 {
     const struct sophia_sf_record *e = NULL;
@@ -24,13 +26,19 @@ int sophia_ss_consume(struct sophia_ss *s)
     if (e->header.kind == SOPHIA_SF_OBJECT_PUBLISHED &&
         e->value.object_published.object_kind >= SOPHIA_SF_LIMITS &&
         e->value.object_published.object_kind <= SOPHIA_SF_INDICATORS) {
-        struct sophia_ss_hold *h = &s->holds[e->value.object_published.object_kind - 1];
-        if (!h->active)
-            h->before = before;
-        h->sequence = e->header.sequence;
-        h->generation = e->value.object_published.generation;
-        h->qid = e->value.object_published.qid;
-        h->active = 1;
+        const struct sophia_sf_object_published *v = &e->value.object_published;
+        struct sophia_ss_hold *h = &s->holds[v->object_kind - 1];
+        const struct sophia_ss_hold *seen = &s->seen[v->object_kind - 1];
+        if (seen->active && seen->generation == v->generation && seen->qid == v->qid)
+            h->active = 0;
+        else {
+            if (!h->active)
+                h->before = before;
+            h->sequence = e->header.sequence;
+            h->generation = v->generation;
+            h->qid = v->qid;
+            h->active = 1;
+        }
     }
     ss_consumed(s, e->header.sequence);
     r = sophia_sf_client_event_consume(&s->files);
@@ -107,8 +115,13 @@ int sophia_ss_object_result(struct sophia_ss *s, const struct sophia_sf_record *
     s->object_requested = 0;
     if (r)
         return r;
-    /* Only the announced object itself, its qid checked at open and its
-     * generation decoded, discharges the announcement. */
+    /* Reached only after full decode, epoch checks and the EOF probe; a
+     * failed fetch returned above and leaves the verified record unchanged. */
+    s->seen[o->header.kind - 1].generation = generation_of(o);
+    s->seen[o->header.kind - 1].qid = s->files.object_qid;
+    s->seen[o->header.kind - 1].active = 1;
+    /* The hold names the latest consumed announcement, so a newer snapshot
+     * releases it (and what it superseded) only when it is that one. */
     h = &s->holds[o->header.kind - 1];
     if (h->active && h->qid == s->files.object_qid && h->generation == generation_of(o))
         h->active = 0;

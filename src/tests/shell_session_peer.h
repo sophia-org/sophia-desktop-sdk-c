@@ -38,6 +38,9 @@ struct peer {
     uint64_t outputs_generation;
     /* Rlerror for walks of outputs or upload/N: node-specific failures. */
     uint32_t object_error, upload_error;
+    /* outputs: append one trailing byte; cap each Rread (0: no cap). */
+    int object_trailing;
+    uint32_t object_read_max;
 };
 static inline uint64_t peer_get(const uint8_t *p, size_t n)
 {
@@ -328,15 +331,19 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             peer_answer_events(p);
             return;
         }
-        if (file == F_API)
+        if (file == F_API) {
             n = sizeof(api) - 1;
-        else
-            n = peer_object(p, file, b + 4, sizeof(b) - 4);
-        if (file == F_API)
             memcpy(b + 4, api, n);
+        } else {
+            n = peer_object(p, file, b + 4, sizeof(b) - 5);
+            if (file == F_OUTPUTS && p->object_trailing)
+                b[4 + n++] = 0xee;
+        }
         n = offset >= n ? 0 : n - (size_t)offset;
         if (n > count)
             n = count;
+        if (file != F_API && p->object_read_max && n > p->object_read_max)
+            n = p->object_read_max;
         memmove(b + 4, b + 4 + offset, n);
         peer_put(b, n, 4);
         peer_send(p, 117, tag, b, 4 + n);

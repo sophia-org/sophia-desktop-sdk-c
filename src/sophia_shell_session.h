@@ -87,7 +87,8 @@ struct sophia_ss {
     uint32_t retry_delay;
     uint8_t flight, waiting, progress, object_requested, refused, reserved;
     struct sophia_ss_entry entries[SOPHIA_SS_SLOTS];
-    struct sophia_ss_hold holds[4];
+    /* holds: announcements owed a fetch; seen: the last verified fetch. */
+    struct sophia_ss_hold holds[4], seen[4];
     struct sophia_ss_ticket tickets[SOPHIA_SS_OUTCOMES];
 };
 /* 9P request storage plus the encoded queue; 0 for invalid sizes. */
@@ -163,7 +164,9 @@ int sophia_ss_ack(struct sophia_ss *);
 int sophia_ss_obligations(const struct sophia_ss *, struct sophia_ss_obligations *);
 /* One object fetch at a time, as sophia_sf_client_object. A fetch releases an
  * announcement only when the opened qid and decoded generation equal the
- * announced ones; a failed or different fetch leaves it owed. */
+ * announced ones; a failed or different fetch leaves it owed. Either order
+ * works: an announcement consumed after its object was already fetched and
+ * verified is discharged at once, together with any older one it supersedes. */
 int sophia_ss_object(struct sophia_ss *, uint16_t kind, uint64_t generation, uint64_t qid);
 int sophia_ss_object_result(struct sophia_ss *, const struct sophia_sf_record **);
 /* As sophia_sf_client_upload_*, including chunk borrowing. Begin, End and

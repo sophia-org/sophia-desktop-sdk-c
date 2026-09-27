@@ -9,18 +9,24 @@ static const struct sophia_sf_record *next_event(struct rig *r, uint64_t sequenc
     assert(e && e->header.sequence == sequence);
     return e;
 }
+static int fetch_status(struct rig *r, uint16_t kind, uint64_t generation, uint64_t qid,
+                        const struct sophia_sf_record **o)
+{
+    unsigned i;
+    int status = SOPHIA_9P_BUSY;
+    *o = NULL;
+    assert(!sophia_ss_object(&r->s, kind, generation, qid));
+    for (i = 0; i < 64 && status == SOPHIA_9P_BUSY; i++) {
+        rig_step(r);
+        status = sophia_ss_object_result(&r->s, o);
+    }
+    return status;
+}
 static const struct sophia_sf_record *fetch(struct rig *r, uint16_t kind, uint64_t generation,
                                             uint64_t qid)
 {
-    const struct sophia_sf_record *o = NULL;
-    unsigned i;
-    int status = SOPHIA_9P_BUSY;
-    assert(!sophia_ss_object(&r->s, kind, generation, qid));
-    for (i = 0; i < 16 && status == SOPHIA_9P_BUSY; i++) {
-        rig_step(r);
-        status = sophia_ss_object_result(&r->s, &o);
-    }
-    assert(!status && o && o->header.kind == kind);
+    const struct sophia_sf_record *o;
+    assert(!fetch_status(r, kind, generation, qid, &o) && o && o->header.kind == kind);
     return o;
 }
 static void ack(struct rig *r, uint64_t sequence)
@@ -115,6 +121,78 @@ static void superseded_announcement_keeps_bound(void)
     assert(object->value.outputs.facts_generation == 6);
     assert(sophia_ss_ack_limit(&r.s) == 6);
     ack(&r, 6);
+    rig_close(&r);
+}
+/* Only EOF may follow the exact record, even when bytes arrive across reads. */
+static void object_eof_probe(void)
+{
+    struct rig r;
+    const struct sophia_sf_record *object;
+    rig_ready(&r, &rig_config);
+    r.p.outputs_generation = 1;
+    /* Exact object: the probe past it reads EOF. */
+    assert(fetch(&r, SOPHIA_SF_OUTPUTS, 1, OUTPUTS_QID)->value.outputs.facts_generation == 1);
+    /* Positive short reads are not EOF: 16 reads of 7 bytes, then the probe. */
+    r.p.object_read_max = 7;
+    object = fetch(&r, SOPHIA_SF_OUTPUTS, 1, OUTPUTS_QID);
+    assert(object->value.outputs.facts_generation == 1);
+    /* The exact record, then one trailing byte in a later read: refused. */
+    r.p.object_trailing = 1;
+    r.p.object_read_max = 112;
+    assert(fetch_status(&r, SOPHIA_SF_OUTPUTS, 1, OUTPUTS_QID, &object) == SOPHIA_9P_INVALID);
+    r.p.object_read_max = 7;
+    assert(fetch_status(&r, SOPHIA_SF_OUTPUTS, 1, OUTPUTS_QID, &object) == SOPHIA_9P_INVALID);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY && !r.s.files.stale);
+    rig_close(&r);
+}
+/* Peek the announcement, fetch and verify its object, then consume it. */
+static void fetch_then_consume(void)
+{
+    struct rig r;
+    const struct sophia_sf_record *object;
+    struct sophia_ss_obligations o;
+    rig_ready(&r, &rig_config);
+    r.p.outputs_generation = 5;
+    peer_published(&r.p, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID);
+    peer_app_event(&r.p);
+    next_event(&r, 3);
+    object = fetch(&r, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID);
+    assert(object->value.outputs.facts_generation == 5);
+    /* A failed fetch does not overwrite the verified record. */
+    r.p.object_trailing = 1;
+    assert(fetch_status(&r, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID, &object) == SOPHIA_9P_INVALID);
+    r.p.object_trailing = 0;
+    assert(next_event(&r, 3)->header.kind == SOPHIA_SF_OBJECT_PUBLISHED);
+    assert(!sophia_ss_consume(&r.s));
+    assert(sophia_ss_ack_limit(&r.s) == 3);
+    next_event(&r, 4);
+    assert(!sophia_ss_consume(&r.s));
+    assert(sophia_ss_ack_limit(&r.s) == 4);
+    assert(!sophia_ss_obligations(&r.s, &o) && !o.objects && !o.blocked);
+    ack(&r, 4);
+    rig_close(&r);
+}
+/* An older announcement is owed; the newer one is fetched before it is
+ * consumed. The earliest bound holds until that consume discharges both. */
+static void superseded_fetch_then_consume(void)
+{
+    struct rig r;
+    const struct sophia_sf_record *object;
+    rig_ready(&r, &rig_config);
+    peer_published(&r.p, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID);
+    peer_published(&r.p, SOPHIA_SF_OUTPUTS, 6, OUTPUTS_QID);
+    next_event(&r, 3);
+    assert(!sophia_ss_consume(&r.s));
+    assert(sophia_ss_ack_limit(&r.s) == 2);
+    assert(next_event(&r, 4)->header.kind == SOPHIA_SF_OBJECT_PUBLISHED);
+    r.p.outputs_generation = 6;
+    object = fetch(&r, SOPHIA_SF_OUTPUTS, 6, OUTPUTS_QID);
+    assert(object->value.outputs.facts_generation == 6);
+    /* Not the latest consumed announcement: the older hold stays. */
+    assert(sophia_ss_ack_limit(&r.s) == 2);
+    assert(!sophia_ss_consume(&r.s));
+    assert(sophia_ss_ack_limit(&r.s) == 4);
+    ack(&r, 4);
     rig_close(&r);
 }
 static void poll_reports_queued_output(void)
@@ -328,6 +406,9 @@ int main(void)
     ack_bounded_by_undelivered_events();
     ack_bounded_by_unfetched_object();
     superseded_announcement_keeps_bound();
+    object_eof_probe();
+    fetch_then_consume();
+    superseded_fetch_then_consume();
     poll_reports_queued_output();
     uploads();
     object_stale_is_not_terminal();
