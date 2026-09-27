@@ -22,7 +22,7 @@ protected-grant contract, rather than a hidden ancillary-data channel.
 | Role | File contract | Client status |
 | --- | --- | --- |
 | Shell: bar, native launcher, catalog/dock, indicators, content | Pinned API 1, revisions 6–8 | Implemented; scope and evidence in README and tests |
-| WM: negotiation, profile handoff, configuration, snapshots, cycles, projections, session operations, presentation receipts | Sophia WM file API 1 | File codecs tested; session implementation remains open |
+| WM: negotiation, profile handoff, configuration, snapshots, cycles, projections, session operations, presentation receipts | Sophia WM file API 1 | File codecs and session pass literal/scripted tests; production-export gate and Hagia migration remain open |
 | Output authority | Separate role; the pinned WM contract still advertises `output_transport=current_ipc` | File contract and SDK client gap |
 | Admin/control: the public control operations and their results | Existing control schema does not establish a 9P file contract | File contract and SDK client gap |
 
