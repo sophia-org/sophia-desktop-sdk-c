@@ -320,6 +320,19 @@ static void bad_limits_and_negotiation_refuse(void) {
     wr_drop(r);
   }
 }
+static void impossible_offer_refuses_before_submission(void) {
+  unsigned profile;
+  for (profile = 0; profile < 2; ++profile) {
+    struct wm_rig *r = wr_new_caps(
+        profile ? WP_CAPS & ~SOPHIA_WF_CAP_PROFILE_ACTIVATION : WP_CAPS);
+    if (!profile)
+      wp_put(r->peer.limits + 32, WP_CAPS & ~SOPHIA_WF_CAP_CONFIGURATION, 8);
+    terminal(r);
+    assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    assert(r->peer.submits == 0 && r->peer.tx_size == 0);
+    wr_drop(r);
+  }
+}
 static void event_lengths_and_sequences_fail_immediately(void) {
   unsigned which;
   for (which = 0; which < 4; ++which) {
@@ -466,6 +479,7 @@ int main(void) {
   RUN(idle_partial_and_clock_deadlines);
   RUN(deadline_never_sends_and_close_classifies);
   RUN(bad_limits_and_negotiation_refuse);
+  RUN(impossible_offer_refuses_before_submission);
   RUN(event_lengths_and_sequences_fail_immediately);
   RUN(ack_faults_and_revocation_keep_custody);
   RUN(snapshot_retry_is_paced_and_truncation_refuses);
