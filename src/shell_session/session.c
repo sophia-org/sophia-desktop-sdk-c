@@ -75,7 +75,7 @@ static int received_custody(const struct sophia_ss *s)
             return 0;
         if (r.header.kind == SOPHIA_SF_SUBMITTED)
             return r.value.submitted.submission_id == s->flight_id &&
-                   r.value.submitted.candidate_kind == ss_get(c->tx + 6, 2);
+                   r.value.submitted.candidate_kind == ss_get(c->tx_storage + 6, 2);
         sequence = r.header.sequence;
         at += n;
     }

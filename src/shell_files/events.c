@@ -49,7 +49,7 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         /* Custody cannot follow a definitive refusal of the same submission. */
         if (!c->submit_stage || c->submitted || c->submit_error ||
             r->value.submitted.submission_id != c->next_submission - 1 ||
-            r->value.submitted.candidate_kind != sf_get(c->tx + 6, 2))
+            r->value.submitted.candidate_kind != sf_get(c->tx_storage + 6, 2))
             return SOPHIA_9P_INVALID;
         c->submitted = 1;
         c->submitted_sequence = r->header.sequence;

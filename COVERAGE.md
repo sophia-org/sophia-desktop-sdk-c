@@ -41,9 +41,12 @@ rows borrow caller-owned encoded storage; fixed candidate arrays remain bounded.
 Descriptor client/session negotiation is still missing from the C file path.
 Existing content clients refuse descriptor events and announcements before
 consumption, because their fetch and ack obligations do not support them yet.
-In particular, the existing
-client's 8 KiB staging buffer does not yet fit maximum tab/reference candidates;
-codec support does not advertise client support for those records.
+The low-level file client accepts caller-owned transaction scratch through
+`sophia_sf_client_init_buffers`; scripted tests send complete maximum tab and
+reference candidates, preserving custody and explicit same-id EAGAIN retry.
+This proves storage/transport behavior only. The queued session still limits
+each record to 8 KiB, and descriptor negotiation and feed holds remain missing;
+codec and staging support do not advertise a descriptor client.
 No descriptor conformance peer or production-export result is claimed yet.
 The proposal remains separate from the published API-1 contract and does not
 change `compatibility.json`.

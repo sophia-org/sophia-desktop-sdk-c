@@ -35,7 +35,7 @@ struct peer {
     uint16_t event_tag, tx_tag, submit_tag;
     uint32_t event_count, event_error, tx_count, error;
     uint64_t event_offset;
-    uint8_t staged[8192], last_submit[24];
+    uint8_t staged[65536], last_submit[24];
     size_t staged_used;
     unsigned tx_writes, submits, acks, upload_bytes;
     uint64_t outputs_generation;

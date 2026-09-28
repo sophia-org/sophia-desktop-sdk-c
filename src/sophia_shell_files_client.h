@@ -25,6 +25,12 @@ struct sophia_sf_operation {
     struct sophia_9p_handle handle;
     uint8_t active;
 };
+struct sophia_sf_buffers {
+    void *objects;
+    size_t object_capacity;
+    void *transaction;
+    size_t transaction_capacity;
+};
 struct sophia_sf_client {
     struct sophia_9p_client *wire;
     uint64_t epoch, next_submission, sequence, consumed_sequence, acked_sequence;
@@ -35,6 +41,8 @@ struct sophia_sf_client {
     enum sophia_sf_profile profile;
     uint8_t *object_storage;
     size_t object_capacity;
+    uint8_t *tx_storage;
+    size_t tx_capacity;
     struct sophia_sf_limits limits;
     uint32_t root, fids[4], object_fid, upload_fid, api_fid, api_iounit;
     uint32_t iounit[4], object_iounit, upload_iounit;
@@ -72,6 +80,17 @@ int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *,
 int sophia_sf_client_init_profile(struct sophia_sf_client *, struct sophia_9p_client *,
                                   struct sophia_sf_negotiate, enum sophia_sf_profile, void *storage,
                                   size_t capacity);
+/* Optional caller-owned scratch for both objects and the outgoing transaction.
+ * NULL buffers or a NULL/0 pair selects that inline buffer (1 KiB / 8 KiB).
+ * External object capacity is 296..SOPHIA_SF_MAX_RECORD; transaction capacity
+ * is 8192..SOPHIA_SF_MAX_RECORD. All buffers must be disjoint from each other,
+ * client, wire and wire storage, and remain exclusive until disposal. Larger
+ * scratch changes no negotiated role or capability. Submit copies the record
+ * before returning, so input rows may be released after successful admission.
+ * Failed validation/capacity checks queue nothing and allocate no id. */
+int sophia_sf_client_init_buffers(struct sophia_sf_client *, struct sophia_9p_client *,
+                                  struct sophia_sf_negotiate, enum sophia_sf_profile,
+                                  const struct sophia_sf_buffers *);
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);
 /* Copies one whole value; header epoch/submission are assigned here. Return
