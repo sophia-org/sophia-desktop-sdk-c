@@ -10,7 +10,7 @@ struct file_rig {
     void *storage;
 };
 static uint8_t transaction[52488], rows[256 * 204], encoded[52488], expected[52488];
-static const struct sophia_sf_negotiate offer = {5, 6, 0};
+static const struct sophia_sf_negotiate offer = {1, 8, 1 | 4 | 8 | 16};
 static void wire_open(struct file_rig *r)
 {
     size_t bytes = sophia_9p_storage_bytes(4096, 8);
@@ -21,6 +21,7 @@ static void wire_open(struct file_rig *r)
     assert(!sophia_9p_init(&r->wire, r->fd[0], 4096, 8, 32, r->storage, bytes));
     r->peer.fd = r->fd[1];
     r->peer.require_custody_ack = 1;
+    r->peer.descriptor = 1;
 }
 static void close_rig(struct file_rig *r)
 {
@@ -48,7 +49,7 @@ static void ready(struct file_rig *r, size_t capacity)
     struct sophia_sf_buffers buffers = {NULL, 0, capacity ? transaction : NULL, capacity};
     wire_open(r);
     memset(transaction, 0xa5, sizeof(transaction));
-    assert(!sophia_sf_client_init_buffers(&r->client, &r->wire, offer, SOPHIA_SF_BAR, &buffers));
+    assert(!sophia_sf_client_init_buffers(&r->client, &r->wire, offer, SOPHIA_SF_DESCRIPTOR, &buffers));
     run(r, 128, 1);
     assert(sophia_sf_client_ready(&r->client) && !r->client.submit_stage &&
            r->client.next_submission == 2 && r->peer.submits == 1);

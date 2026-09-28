@@ -38,15 +38,16 @@ presentation candidates in `spec/proposed/`. It validates envelopes, identities,
 bounded text, row counts and uniqueness, action/connection bindings, style and
 outcome relationships using literal vectors. Snapshots and larger candidate
 rows borrow caller-owned encoded storage; fixed candidate arrays remain bounded.
-Descriptor client/session negotiation is still missing from the C file path.
-Existing content clients refuse descriptor events and announcements before
-consumption, because their fetch and ack obligations do not support them yet.
+The development descriptor profile validates its explicit api role and exact
+selected capabilities, supports metadata-only and combined content readiness,
+and tracks fetch/ack holds for every disclosed feed. Scripted tests exercise
+partial reads, EOF, supersession, qid/generation matching and capability
+refusals. Existing content roles refuse descriptor disclosure before consumption.
 The low-level file client accepts caller-owned transaction scratch through
 `sophia_sf_client_init_buffers`; scripted tests send complete maximum tab and
 reference candidates, preserving custody and explicit same-id EAGAIN retry.
-This proves storage/transport behavior only. The queued session still limits
-each record to 8 KiB, and descriptor negotiation and feed holds remain missing;
-codec and staging support do not advertise a descriptor client.
+The queued session still limits each record to 8 KiB, so maximum tab/reference
+candidates require the low-level client until queue storage is extended.
 No descriptor conformance peer or production-export result is claimed yet.
 The proposal remains separate from the published API-1 contract and does not
 change `compatibility.json`.

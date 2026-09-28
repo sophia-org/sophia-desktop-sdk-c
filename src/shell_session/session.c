@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../shell_files/session_internal.h"
 #include <limits.h>
 #include <poll.h>
 
@@ -70,6 +71,7 @@ static int received_custody(const struct sophia_ss *s)
         n = (size_t)ss_get(c->event_bytes + at, 4);
         if (n < SOPHIA_SF_HEADER_BYTES || n > c->event_used - at ||
             sophia_sf_decode(c->event_bytes + at, n, &r) || r.header.epoch != c->epoch ||
+            !sf_session_event_allowed(c, &r) ||
             r.header.kind < 16 || r.header.kind >= 256 || r.header.sequence <= sequence ||
             r.header.kind == SOPHIA_SF_NEGOTIATED || r.header.kind == SOPHIA_SF_RESOURCE_STATUS)
             return 0;
@@ -145,8 +147,8 @@ static int drain(struct sophia_ss *s)
         s->ack_clock = s->now_ms;
         s->progress = 1;
     }
-    /* Negotiation's own Limits fetch; without limits the session cannot
-     * become ready, so a failed fetch fails closed. */
+    /* A negotiated content grant requires its bootstrap Limits fetch.
+     * Metadata-only descriptor sessions never issue that fetch. */
     if (s->files.object_ready && !s->object_requested &&
         sophia_sf_client_object_result(&s->files, &e) && !s->files.have_limits)
         r = SOPHIA_9P_INVALID;
@@ -250,6 +252,10 @@ const struct sophia_sf_limits *sophia_ss_limits(const struct sophia_ss *s)
 {
     return s && s->files.have_limits ? &s->files.limits : NULL;
 }
+const struct sophia_sf_negotiated *sophia_ss_welcome(const struct sophia_ss *s)
+{
+    return s ? sophia_sf_client_welcome(&s->files) : NULL;
+}
 int sophia_ss_refusal(const struct sophia_ss *s, uint16_t *reason, uint64_t *denied)
 {
     if (!s || !reason || !denied)
@@ -273,7 +279,7 @@ int sophia_ss_obligations(const struct sophia_ss *s, struct sophia_ss_obligation
         o->ack_due_ms = s->ack_clock > UINT64_MAX - SOPHIA_SS_ACK_PROGRESS_MS
                             ? UINT64_MAX
                             : s->ack_clock + SOPHIA_SS_ACK_PROGRESS_MS;
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 7; i++)
         if (s->holds[i].active)
             o->objects |= (uint8_t)(1u << i);
     o->blocked = o->consumed > o->ack_limit;

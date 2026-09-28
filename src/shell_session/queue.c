@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../shell_files/session_internal.h"
 
 /* Encode with the live epoch and submission 0; a stand-in id satisfies
  * validation and hand-off assigns the real one. BUSY: no room. */
@@ -39,6 +40,8 @@ static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, si
     if (count > slots)
         return reserved ? SOPHIA_9P_ARGUMENT : SOPHIA_9P_BUSY;
     for (i = 0; i < count; i++) {
+        if (!sf_session_candidate_allowed(&s->files, records[i].header.kind))
+            return SOPHIA_9P_ARGUMENT;
         status = encode(&records[i], s->files.epoch, s->queue + s->queue_used + used, room - used,
                         &n);
         /* Only a record that could never fit, or overruns a reservation, is

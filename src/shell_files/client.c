@@ -35,12 +35,14 @@ int sophia_sf_client_init_buffers(struct sophia_sf_client *c, struct sophia_9p_c
     const struct sophia_sf_buffers v = buffers ? *buffers : (struct sophia_sf_buffers){0};
     if (!c || !wire || wire->phase || !offer.minimum_revision ||
         offer.minimum_revision > offer.maximum_revision || wire->capacity < 8 ||
-        profile < SOPHIA_SF_BAR || profile > SOPHIA_SF_DOCK ||
+        profile < SOPHIA_SF_BAR || profile > SOPHIA_SF_DESCRIPTOR ||
         !external_buffer(c, wire, v.objects, v.object_capacity, 296) ||
         !external_buffer(c, wire, v.transaction, v.transaction_capacity, 8192) ||
         !disjoint(v.objects, v.object_capacity, v.transaction, v.transaction_capacity))
         return SOPHIA_9P_ARGUMENT;
-    if (profile != SOPHIA_SF_BAR) {
+    if (profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_offer(&offer))
+        return SOPHIA_9P_ARGUMENT;
+    if (profile == SOPHIA_SF_LAUNCHER || profile == SOPHIA_SF_DOCK) {
         unsigned revision = profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
         uint64_t mask = profile == SOPHIA_SF_LAUNCHER ? 0x9a0 : 0x11a2;
         if (offer.minimum_revision > revision || offer.maximum_revision < revision ||
@@ -61,7 +63,16 @@ int sophia_sf_client_init_buffers(struct sophia_sf_client *c, struct sophia_9p_c
 }
 int sophia_sf_client_ready(const struct sophia_sf_client *c)
 {
-    return c && !c->terminal && !c->refused && c->negotiated && c->have_limits;
+    if (!c || c->terminal || c->refused || !c->negotiated)
+        return 0;
+    if (c->profile == SOPHIA_SF_DESCRIPTOR)
+        return c->bootstrap_custody_consumed && c->welcome_consumed &&
+               (!(c->welcome.capabilities & (1u << 7)) || c->have_limits);
+    return c->have_limits;
+}
+const struct sophia_sf_negotiated *sophia_sf_client_welcome(const struct sophia_sf_client *c)
+{
+    return c && c->negotiated ? &c->welcome : NULL;
 }
 static int bootstrap_drive(struct sophia_sf_client *c)
 {
@@ -355,6 +366,8 @@ int sophia_sf_client_submit(struct sophia_sf_client *c, const struct sophia_sf_r
         return c->terminal;
     if (!sophia_sf_client_ready(c))
         return SOPHIA_9P_BUSY;
+    if (!sf_session_candidate_allowed(c, r->header.kind))
+        return SOPHIA_9P_ARGUMENT;
     return sf_session_queue(c, r);
 }
 int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record, size_t bytes)
@@ -373,6 +386,8 @@ int sophia_sf_client_submit_bytes(struct sophia_sf_client *c, const void *record
     if (!sophia_sf_client_ready(c) || c->submit_stage)
         return SOPHIA_9P_BUSY;
     if (sf_get(b + 8, 8) != c->epoch || c->next_submission == UINT64_MAX)
+        return SOPHIA_9P_ARGUMENT;
+    if (!sf_session_candidate_allowed(c, (uint16_t)kind))
         return SOPHIA_9P_ARGUMENT;
     /* tx is idle scratch until armed; a refused record changes no state. */
     memmove(c->tx_storage, b, bytes);

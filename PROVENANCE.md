@@ -128,8 +128,9 @@ validator's rules; the proposed byte layout is still unchanged.
 
 The descriptor codec implements all seventeen proposed envelopes: three whole
 objects, eight event bodies, two activation acknowledgements and four
-presentation candidates. Literal
-native file vectors test them independently of the Rust codec and the old
-socket frames. This is not acceptance of the contract, descriptor session
-support, or a release claim. Negotiated role selection and real
-export conformance remain to be implemented and gated in the C SDK path.
+presentation candidates. Literal native file vectors test them independently
+of the Rust codec and the old socket frames. Development profile selection,
+metadata/combined readiness and snapshot fetch/ack holds have scripted-peer
+coverage. Large queued candidates and real-export conformance remain to be
+implemented and gated in the C SDK path. This is not acceptance of the contract
+or a release claim.

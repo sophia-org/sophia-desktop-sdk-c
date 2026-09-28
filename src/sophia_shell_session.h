@@ -88,7 +88,7 @@ struct sophia_ss {
     uint8_t flight, waiting, progress, object_requested, refused, reserved;
     struct sophia_ss_entry entries[SOPHIA_SS_SLOTS];
     /* holds: announcements owed a fetch; seen: the last verified fetch. */
-    struct sophia_ss_hold holds[4], seen[4];
+    struct sophia_ss_hold holds[7], seen[7];
     struct sophia_ss_ticket tickets[SOPHIA_SS_OUTCOMES];
 };
 /* 9P request storage plus the encoded queue; 0 for invalid sizes. */
@@ -117,6 +117,8 @@ int sophia_ss_dispatch(struct sophia_ss *, short revents, size_t byte_budget, ui
 enum sophia_ss_state sophia_ss_state(const struct sophia_ss *);
 /* The live epoch after negotiation, and the granted limits; else 0 and NULL. */
 uint64_t sophia_ss_epoch(const struct sophia_ss *);
+/* Validated selected revision/capabilities, or NULL before negotiation. */
+const struct sophia_sf_negotiated *sophia_ss_welcome(const struct sophia_ss *);
 const struct sophia_sf_limits *sophia_ss_limits(const struct sophia_ss *);
 /* AGAIN unless a Refused event was received; its reason and denied bits. */
 int sophia_ss_refusal(const struct sophia_ss *, uint16_t *reason, uint64_t *denied);

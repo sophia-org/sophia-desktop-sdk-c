@@ -50,6 +50,18 @@ its pin without overflowing the buffer or terminating the session. Storage must
 remain alive and separate from client/wire state until disposal; returned views
 remain borrowed until the next fetch.
 
+The development `SOPHIA_SF_DESCRIPTOR` profile uses `spec/proposed/`. Its api
+must name `descriptor`, and its offer must obey that proposal's revision and
+capability dependencies. `sophia_ss_welcome` exposes the validated selection.
+Metadata-only sessions become ready after bootstrap Submitted and Negotiated
+are consumed, with no Limits request; combined content also needs valid Limits.
+Unselected object and record families are refused locally. Descriptor, tab and
+shortcut announcements participate in the same fetch/ack holds as other feeds:
+full decode, matching qid/generation and an EOF probe precede release.
+`sophia_sf_client_init_buffers` supports caller-owned large transaction scratch;
+the queued session still has its 8 KiB record bound. This development path has
+scripted-peer coverage, not production-export qualification yet.
+
 Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
 rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`), extended
 with role layouts and normative value rules from `ee5e7f809` and the validation
