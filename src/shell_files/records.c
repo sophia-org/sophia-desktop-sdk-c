@@ -58,6 +58,10 @@ static size_t body_size(const struct sophia_sf_record *r)
         return 0;
     }
 }
+size_t sophia_sf_record_bytes(const struct sophia_sf_record *r)
+{
+    return !r || sf_validate(r) ? 0 : SOPHIA_SF_HEADER_BYTES + body_size(r);
+}
 int sophia_sf_encode(void *dst, size_t capacity, const struct sophia_sf_record *r, size_t *written)
 {
     uint8_t *b = dst;

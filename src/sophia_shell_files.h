@@ -136,6 +136,8 @@ struct sophia_sf_record {
  * Return 0 on success, -1 for invalid wire/value, -4 for arguments/capacity.
  * Semantic admission, grants and presentation remain with their owners. */
 int sophia_sf_encode(void *, size_t, const struct sophia_sf_record *, size_t *);
+/* Validated encoded length, or 0 for an invalid value. No scratch required. */
+size_t sophia_sf_record_bytes(const struct sophia_sf_record *);
 int sophia_sf_decode(const void *, size_t, struct sophia_sf_record *);
 int sophia_sf_submit_encode(uint8_t dst[24], uint64_t epoch, uint64_t submission, uint32_t bytes);
 int sophia_sf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);

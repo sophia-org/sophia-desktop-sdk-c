@@ -131,6 +131,7 @@ objects, eight event bodies, two activation acknowledgements and four
 presentation candidates. Literal native file vectors test them independently
 of the Rust codec and the old socket frames. Development profile selection,
 metadata/combined readiness and snapshot fetch/ack holds have scripted-peer
-coverage. Large queued candidates and real-export conformance remain to be
-implemented and gated in the C SDK path. This is not acceptance of the contract
-or a release claim.
+coverage. Large queued candidates use explicit caller-owned staging with
+scripted capacity, reservation and custody controls. Real-export conformance
+remains pending in the C SDK path. This is not acceptance of the contract or a
+release claim.

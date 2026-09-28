@@ -23,22 +23,44 @@ size_t sophia_ss_storage_bytes(uint32_t msize, size_t queue_bytes)
 int sophia_ss_open_fd(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
                       void *storage, size_t bytes)
 {
+    return sophia_ss_open_fd_staging(s, fd, config, storage, bytes, NULL, 0);
+}
+static int disjoint(const void *left, size_t n, const void *right, size_t m)
+{
+    uintptr_t a = (uintptr_t)left, b = (uintptr_t)right;
+    return !n || !m ||
+           (a <= UINTPTR_MAX - n && b <= UINTPTR_MAX - m && (a + n <= b || b + m <= a));
+}
+int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
+                              void *storage, size_t bytes, void *transaction, size_t capacity)
+{
     size_t needed, wire;
-    uintptr_t a = (uintptr_t)s, b = (uintptr_t)storage;
+    struct sophia_sf_buffers buffers;
     int r;
     if (!s || !config || !storage || !config->queue_slots || config->queue_slots > SOPHIA_SS_SLOTS)
         return SOPHIA_9P_ARGUMENT;
     needed = sophia_ss_storage_bytes(config->msize, config->queue_bytes);
-    if (!needed || bytes < needed || a > UINTPTR_MAX - sizeof(*s) || b > UINTPTR_MAX - needed ||
-        !(a + sizeof(*s) <= b || b + needed <= a))
+    if (!needed || bytes < needed || !disjoint(s, sizeof(*s), storage, needed) ||
+        ((!transaction) != (!capacity)) ||
+        (transaction && (capacity < SOPHIA_SS_RECORD_BYTES || capacity > SOPHIA_SF_MAX_TRANSACTION)) ||
+        ((!config->object_storage) != (!config->object_capacity)) ||
+        (config->object_storage &&
+         (config->object_capacity < 296 || config->object_capacity > SOPHIA_SF_MAX_RECORD)) ||
+        !disjoint(transaction, capacity, s, sizeof(*s)) ||
+        !disjoint(transaction, capacity, storage, needed) ||
+        !disjoint(config->object_storage, config->object_capacity, s, sizeof(*s)) ||
+        !disjoint(config->object_storage, config->object_capacity, storage, needed) ||
+        !disjoint(config->object_storage, config->object_capacity, transaction, capacity))
         return SOPHIA_9P_ARGUMENT;
+    buffers = (struct sophia_sf_buffers){config->object_storage, config->object_capacity,
+                                       transaction, capacity};
     wire = sophia_9p_storage_bytes(config->msize, SOPHIA_SS_REQUESTS);
     memset(s, 0, sizeof(*s));
     r = sophia_9p_init(&s->wire, fd, config->msize, SOPHIA_SS_REQUESTS, SOPHIA_SS_FIDS, storage,
                        wire);
     if (!r)
-        r = sophia_sf_client_init_profile(&s->files, &s->wire, config->offer, config->profile,
-                                          config->object_storage, config->object_capacity);
+        r = sophia_sf_client_init_buffers(&s->files, &s->wire, config->offer, config->profile,
+                                          &buffers);
     if (r) {
         s->state = SOPHIA_SS_FAILED;
         return r;

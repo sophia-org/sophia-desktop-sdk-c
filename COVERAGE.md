@@ -46,8 +46,11 @@ refusals. Existing content roles refuse descriptor disclosure before consumption
 The low-level file client accepts caller-owned transaction scratch through
 `sophia_sf_client_init_buffers`; scripted tests send complete maximum tab and
 reference candidates, preserving custody and explicit same-id EAGAIN retry.
-The queued session still limits each record to 8 KiB, so maximum tab/reference
-candidates require the low-level client until queue storage is extended.
+The queued session accepts separate caller-owned transaction storage through
+`sophia_ss_open_fd_staging`. Scripted tests cover maximum tab/reference groups,
+fragmented writes, immutable hand-off, atomic refusal, reservations, paced
+same-id retry and disconnect custody. Existing initializers retain 8 KiB inline
+staging; per-kind codec limits and the total queue bound remain unchanged.
 No descriptor conformance peer or production-export result is claimed yet.
 The proposal remains separate from the published API-1 contract and does not
 change `compatibility.json`.
