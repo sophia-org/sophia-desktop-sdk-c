@@ -116,9 +116,14 @@ commit `0cbb7ea5b3aade7fee6ee271fe03e57e3cf2e78f`. Their original paths are
 published contracts; `make check-spec` checks both sets. Relative links and the
 proposal's historical implementation status are preserved in the copied ADR.
 
-The descriptor control codec implements eight event bodies and the two
-activation acknowledgements from this proposal. Literal native file vectors
-test them independently of the Rust codec and the old socket frames. This is
-not acceptance of the contract, descriptor session support, or a release claim.
-Whole objects, presentation candidates, negotiated role selection and real
+The ADR copy is subsequently refreshed from signed Sophia
+`348dee082260706158447bc2e65745992a071423`. It clarifies that hidden descriptor
+candidates have no entries and that generations may repeat across distinct
+slots. The KDL is byte-identical; no field layout changes.
+
+The descriptor codec implements eight event bodies, two activation
+acknowledgements and four presentation candidates from this proposal. Literal
+native file vectors test them independently of the Rust codec and the old
+socket frames. This is not acceptance of the contract, descriptor session
+support, or a release claim. Whole objects, negotiated role selection and real
 export conformance remain to be implemented and gated in the C SDK path.

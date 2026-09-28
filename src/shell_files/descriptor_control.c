@@ -2,9 +2,11 @@
  * relationships in descriptor-records.md. No socket framing or IPC codecs. */
 #include "descriptors_internal.h"
 
-size_t sf_descriptor_size(unsigned kind)
+size_t sf_descriptor_size(const struct sophia_sf_record *r)
 {
-    switch (kind) {
+    if (sf_descriptor_candidate_kind(r->header.kind))
+        return sf_descriptor_candidate_size(r);
+    switch (r->header.kind) {
     case SOPHIA_SF_DESCRIPTOR_OUTCOME:
         return 36;
     case SOPHIA_SF_DESCRIPTOR_ACTIVATION:
@@ -56,6 +58,8 @@ static int grant_check(const struct sophia_sf_descriptor_launcher_activation *v,
 int sf_descriptor_check(const struct sophia_sf_record *r)
 {
     uint64_t epoch = r->header.epoch;
+    if (sf_descriptor_candidate_kind(r->header.kind))
+        return sf_descriptor_candidate_check(r);
     switch (r->header.kind) {
     case SOPHIA_SF_DESCRIPTOR_OUTCOME: {
         const struct sophia_sf_descriptor_outcome *v = &r->value.descriptor_outcome;
@@ -144,8 +148,12 @@ static void grant_put(uint8_t *b, const struct sophia_sf_descriptor_launcher_act
 }
 void sf_descriptor_put(uint8_t *b, const struct sophia_sf_record *r)
 {
+    if (sf_descriptor_candidate_kind(r->header.kind)) {
+        sf_descriptor_candidate_put(b, r);
+        return;
+    }
     /* All padding is written, including query capacity beyond its length. */
-    memset(b, 0, sf_descriptor_size(r->header.kind));
+    memset(b, 0, sf_descriptor_size(r));
     switch (r->header.kind) {
     case SOPHIA_SF_DESCRIPTOR_OUTCOME: {
         const struct sophia_sf_descriptor_outcome *v = &r->value.descriptor_outcome;
@@ -248,8 +256,10 @@ static void grant_take(const uint8_t *b, struct sophia_sf_descriptor_launcher_ac
 }
 int sf_descriptor_take(const uint8_t *b, size_t n, struct sophia_sf_record *r)
 {
+    if (sf_descriptor_candidate_kind(r->header.kind))
+        return sf_descriptor_candidate_take(b, n, r);
     /* Public decode owns a temporary record and validates it before assignment. */
-    if (n != sf_descriptor_size(r->header.kind))
+    if (n != sf_descriptor_size(r))
         return -1;
     switch (r->header.kind) {
     case SOPHIA_SF_DESCRIPTOR_OUTCOME: {

@@ -5,7 +5,7 @@
 static size_t body_size(const struct sophia_sf_record *r)
 {
     if (sf_descriptor_kind(r->header.kind))
-        return sf_descriptor_size(r->header.kind);
+        return sf_descriptor_size(r);
     if (sf_role_kind(r->header.kind))
         return sf_role_size(r);
     switch (r->header.kind) {

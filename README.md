@@ -26,7 +26,7 @@ WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
 bindings. Output authority and admin file clients are not implemented yet.
 
-Development descriptor control codecs use separately pinned proposed layouts
+Development descriptor codecs use separately pinned proposed layouts
 in `spec/proposed/`. They are passive values, not a descriptor session client;
 see [coverage](COVERAGE.md#parity-gate) for the remaining migration work.
 

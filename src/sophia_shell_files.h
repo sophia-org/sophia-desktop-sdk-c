@@ -56,7 +56,11 @@ enum sophia_sf_kind {
     SOPHIA_SF_CATALOG_CANDIDATE = 270,
     SOPHIA_SF_CATALOG_ACTIVATE = 271,
     SOPHIA_SF_INDICATOR_ACTIVATE = 272,
+    SOPHIA_SF_DESCRIPTOR_CANDIDATE = 273,
     SOPHIA_SF_DESCRIPTOR_ACTIVATION_ACK = 274,
+    SOPHIA_SF_TABS_CANDIDATE = 275,
+    SOPHIA_SF_REFERENCE_CANDIDATE = 276,
+    SOPHIA_SF_DESCRIPTOR_LAUNCHER_CANDIDATE = 277,
     SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION_ACK = 278,
 };
 struct sophia_sf_header {
@@ -114,6 +118,10 @@ struct sophia_sf_record {
         struct sophia_sf_descriptor_launch_outcome descriptor_launch_outcome;
         struct sophia_sf_descriptor_activation_ack descriptor_activation_ack;
         struct sophia_sf_descriptor_launcher_activation_ack descriptor_launcher_activation_ack;
+        struct sophia_sf_descriptor_candidate descriptor_candidate;
+        struct sophia_sf_tabs_candidate tabs_candidate;
+        struct sophia_sf_reference_candidate reference_candidate;
+        struct sophia_sf_descriptor_launcher_candidate descriptor_launcher_candidate;
     } value;
 };
 /* Validate complete records; output arguments and destination stay unchanged on error.

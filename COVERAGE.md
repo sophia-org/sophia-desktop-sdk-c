@@ -32,11 +32,15 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
-Development descriptor work currently covers the eight native control events
-and two activation acknowledgements in `spec/proposed/`. It validates native
-envelopes, identities, bounded query text and outcome relationships using
-literal vectors. The three whole objects, four presentation candidates and
-descriptor client/session negotiation are still missing from the C file path.
+Development descriptor work currently covers the eight native control events,
+two activation acknowledgements and four presentation candidates in
+`spec/proposed/`. It validates native envelopes, identities, bounded text, row
+counts and uniqueness, style and outcome relationships using literal vectors.
+Tab and reference rows borrow caller-owned encoded storage; fixed candidate
+arrays remain bounded. The three whole objects and descriptor client/session
+negotiation are still missing from the C file path. In particular, the existing
+client's 8 KiB staging buffer does not yet fit maximum tab/reference candidates;
+codec support does not advertise client support for those records.
 No descriptor conformance peer or production-export result is claimed yet.
 The proposal remains separate from the published API-1 contract and does not
 change `compatibility.json`.
