@@ -31,9 +31,12 @@ bodies, cycle causes, complete section bounds and negotiated section disclosure.
 `sophia_wm_records.h` supplies all 22 neutral fixed row codecs without socket
 framing. These enforce structural wire rules; Session still validates scene,
 geometry, policy phase and authority. The focused codec test uses literal
-bodies and the pinned golden row corpus, not a live export. Regenerate fixed
-rows with `python3 tools/generate_wm_rows.py`; Python is not a library build
-dependency. `compatibility.json` sets `wm_files=true` because the
+bodies and the pinned golden row corpus, not a live export. The fixed rows are
+generated from the `row-layouts` block of the WM file KDL with
+`python3 tools/generate_wm_rows.py`, which refuses drift from the frozen socket
+schema while that compatibility remains. `make check-generator` checks the
+generated files and the generator's parser controls; Python is not a library
+build dependency. `compatibility.json` sets `wm_files=true` because the
 production WM export gate has passed (Sophia `c4e17899e`).
 
 The WM session (`sophia_wm_session.h`) owns file bootstrap, immutable candidate
