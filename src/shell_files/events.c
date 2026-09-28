@@ -15,6 +15,14 @@ int sf_session_event_parse(struct sophia_sf_client *c)
     if (sophia_sf_decode(c->event_bytes, n, r) || r->header.epoch != c->epoch ||
         r->header.kind < 16 || r->header.kind >= 256 || r->header.sequence <= c->sequence)
         return SOPHIA_9P_INVALID;
+    /* The passive codec knows descriptor records before this client has a
+     * descriptor profile or fetch/ack holds for its feeds. Fail closed here;
+     * consuming an unsupported publication must not advance the ack frontier. */
+    if ((r->header.kind >= SOPHIA_SF_DESCRIPTOR_OUTCOME &&
+         r->header.kind <= SOPHIA_SF_DESCRIPTOR_LAUNCH_OUTCOME) ||
+        (r->header.kind == SOPHIA_SF_OBJECT_PUBLISHED &&
+         r->value.object_published.object_kind > SOPHIA_SF_INDICATORS))
+        return SOPHIA_9P_INVALID;
     switch (r->header.kind) {
     case SOPHIA_SF_NEGOTIATED: {
         const struct sophia_sf_negotiated *v = &r->value.negotiated;

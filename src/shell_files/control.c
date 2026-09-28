@@ -100,7 +100,7 @@ int sf_take_submitted(const uint8_t *b, struct sophia_sf_submitted *v)
 }
 int sf_check_object_published(const struct sophia_sf_object_published *v)
 {
-    if (v->object_kind < 1 || v->object_kind > 4 || !v->qid)
+    if (v->object_kind < 1 || v->object_kind > 7 || !v->qid)
         return -1;
     return 0;
 }

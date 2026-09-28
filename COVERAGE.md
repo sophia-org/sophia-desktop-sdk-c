@@ -32,13 +32,16 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
-Development descriptor work currently covers the eight native control events,
-two activation acknowledgements and four presentation candidates in
-`spec/proposed/`. It validates native envelopes, identities, bounded text, row
-counts and uniqueness, style and outcome relationships using literal vectors.
-Tab and reference rows borrow caller-owned encoded storage; fixed candidate
-arrays remain bounded. The three whole objects and descriptor client/session
-negotiation are still missing from the C file path. In particular, the existing
+Development descriptor work covers all seventeen proposed native envelopes:
+three whole objects, eight events, two activation acknowledgements and four
+presentation candidates in `spec/proposed/`. It validates envelopes, identities,
+bounded text, row counts and uniqueness, action/connection bindings, style and
+outcome relationships using literal vectors. Snapshots and larger candidate
+rows borrow caller-owned encoded storage; fixed candidate arrays remain bounded.
+Descriptor client/session negotiation is still missing from the C file path.
+Existing content clients refuse descriptor events and announcements before
+consumption, because their fetch and ack obligations do not support them yet.
+In particular, the existing
 client's 8 KiB staging buffer does not yet fit maximum tab/reference candidates;
 codec support does not advertise client support for those records.
 No descriptor conformance peer or production-export result is claimed yet.

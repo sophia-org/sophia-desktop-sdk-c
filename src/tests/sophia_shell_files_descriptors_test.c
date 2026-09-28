@@ -356,8 +356,7 @@ static void receipts_and_unknowns(void)
     valid_value(&r);
     r.value.submitted.candidate_kind = 278;
     valid_value(&r);
-    /* Not implemented in this control-record slice; fail closed. */
-    const uint16_t unknown[] = {5, 6, 7, 54, 279, UINT16_MAX};
+    const uint16_t unknown[] = {8, 54, 279, UINT16_MAX};
     uint8_t wire[353];
     for (size_t i = 0; i < sizeof(unknown) / sizeof(unknown[0]); i++) {
         memcpy(wire, vectors[0].wire, sizeof(wire));

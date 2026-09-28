@@ -13,6 +13,9 @@ enum sophia_sf_kind {
     SOPHIA_SF_OUTPUTS = 2,
     SOPHIA_SF_CATALOG = 3,
     SOPHIA_SF_INDICATORS = 4,
+    SOPHIA_SF_DESCRIPTORS = 5,
+    SOPHIA_SF_TABS = 6,
+    SOPHIA_SF_SHORTCUTS = 7,
     SOPHIA_SF_NEGOTIATED = 16,
     SOPHIA_SF_REFUSED = 17,
     SOPHIA_SF_SUBMITTED = 18,
@@ -122,6 +125,9 @@ struct sophia_sf_record {
         struct sophia_sf_tabs_candidate tabs_candidate;
         struct sophia_sf_reference_candidate reference_candidate;
         struct sophia_sf_descriptor_launcher_candidate descriptor_launcher_candidate;
+        struct sophia_sf_descriptors descriptors;
+        struct sophia_sf_tabs tabs;
+        struct sophia_sf_shortcuts shortcuts;
     } value;
 };
 /* Validate complete records; output arguments and destination stay unchanged on error.

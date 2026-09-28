@@ -52,24 +52,28 @@ static void sift(uint64_t *order, size_t root, size_t count)
         root = child;
     }
 }
-static int tab_order_unique(const struct sophia_sf_tabs_candidate *v)
+int sf_descriptor_group_order_unique(const uint8_t *rows, size_t count, size_t stride)
 {
     uint64_t order[1024];
     size_t i;
     /* Fixed scratch and O(n log n) work even for adversarial u64 group IDs.
      * Sorting this copy must never change the application's requested order. */
-    for (i = 0; i < v->group_count; i++)
-        if (sophia_sf_tab_order_at(v, i, &order[i]))
+    if (count > 1024 || (count && !rows) || (stride != 8 && stride != 24))
+        return -1;
+    for (i = 0; i < count; i++) {
+        order[i] = sf_get(rows + i * stride, 8);
+        if (!order[i])
             return -1;
-    for (i = v->group_count / 2; i > 0; i--)
-        sift(order, i - 1, v->group_count);
-    for (i = v->group_count; i > 1; i--) {
+    }
+    for (i = count / 2; i > 0; i--)
+        sift(order, i - 1, count);
+    for (i = count; i > 1; i--) {
         uint64_t saved = order[0];
         order[0] = order[i - 1];
         order[i - 1] = saved;
         sift(order, 0, i - 1);
     }
-    for (i = 1; i < v->group_count; i++)
+    for (i = 1; i < count; i++)
         if (order[i - 1] == order[i])
             return -1;
     return 0;
@@ -130,7 +134,7 @@ int sf_descriptor_candidate_check(const struct sophia_sf_record *r)
             !v->candidate_generation || v->group_count > 1024 ||
             v->rows_bytes != (size_t)v->group_count * 8 || (v->rows_bytes && !v->rows))
             return -1;
-        return tab_order_unique(v);
+        return sf_descriptor_group_order_unique(v->rows, v->group_count, 8);
     }
     case SOPHIA_SF_REFERENCE_CANDIDATE:
         return sf_reference_candidate_check(&r->value.reference_candidate, r->header.epoch);

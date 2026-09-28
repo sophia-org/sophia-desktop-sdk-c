@@ -121,9 +121,15 @@ The ADR copy is subsequently refreshed from signed Sophia
 candidates have no entries and that generations may repeat across distinct
 slots. The KDL is byte-identical; no field layout changes.
 
-The descriptor codec implements eight event bodies, two activation
-acknowledgements and four presentation candidates from this proposal. Literal
+The ADR is refreshed again from signed Sophia
+`731c5295bb2bf5bc875a1704a27f76a9e44e5086` to state shortcut slot uniqueness and
+mandatory chord/action text explicitly. This preserves the prior shortcut
+validator's rules; the proposed byte layout is still unchanged.
+
+The descriptor codec implements all seventeen proposed envelopes: three whole
+objects, eight event bodies, two activation acknowledgements and four
+presentation candidates. Literal
 native file vectors test them independently of the Rust codec and the old
 socket frames. This is not acceptance of the contract, descriptor session
-support, or a release claim. Whole objects, negotiated role selection and real
+support, or a release claim. Negotiated role selection and real
 export conformance remain to be implemented and gated in the C SDK path.

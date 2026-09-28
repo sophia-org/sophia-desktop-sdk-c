@@ -104,4 +104,56 @@ int sophia_sf_reference_entry_encode(uint8_t dst[204], const struct sophia_sf_re
 int sophia_sf_reference_entry_decode(const uint8_t src[204], struct sophia_sf_reference_entry *);
 int sophia_sf_reference_entry_at(const struct sophia_sf_reference_candidate *, size_t,
                                  struct sophia_sf_reference_entry *);
+
+struct sophia_sf_descriptor_entry {
+    uint16_t slot, trust_level, attention, label_present, label_redacted;
+    uint64_t generation, action_token, action_issuer_epoch, action_issuer_revocation_epoch;
+    uint64_t action_recipient_epoch;
+    uint16_t action_target_slot;
+    uint64_t action_target_generation;
+    struct sophia_sf_text label;
+};
+struct sophia_sf_descriptors {
+    uint64_t transaction, connection_epoch, snapshot_generation, output_id, output_generation;
+    uint64_t broker_epoch, broker_revocation_epoch;
+    uint16_t descriptor_count;
+    const uint8_t *rows;
+    size_t rows_bytes;
+};
+struct sophia_sf_tab_group {
+    uint64_t group_slot, output_id;
+    uint16_t selected_slot, focused, entry_count;
+};
+struct sophia_sf_tabs {
+    uint64_t transaction, connection_epoch, generation;
+    uint16_t group_count, entry_count;
+    /* All 24-byte group rows, followed by all 196-byte descriptor rows.
+     * Each group's entry_count partitions that one descriptor array in order. */
+    const uint8_t *rows;
+    size_t rows_bytes;
+};
+struct sophia_sf_shortcut_entry {
+    uint16_t slot, label_present, group_present;
+    struct sophia_sf_text chord, action, label, group;
+};
+struct sophia_sf_shortcuts {
+    uint64_t transaction, connection_epoch, generation;
+    uint16_t entry_count;
+    const uint8_t *rows;
+    size_t rows_bytes;
+};
+int sophia_sf_descriptor_entry_encode(uint8_t dst[196], const struct sophia_sf_descriptor_entry *);
+int sophia_sf_descriptor_entry_decode(const uint8_t src[196], struct sophia_sf_descriptor_entry *);
+int sophia_sf_descriptor_entry_at(const struct sophia_sf_descriptors *, size_t,
+                                  struct sophia_sf_descriptor_entry *);
+int sophia_sf_tab_group_encode(uint8_t dst[24], const struct sophia_sf_tab_group *);
+int sophia_sf_tab_group_decode(const uint8_t src[24], struct sophia_sf_tab_group *);
+int sophia_sf_tab_group_at(const struct sophia_sf_tabs *, size_t, struct sophia_sf_tab_group *);
+/* Descriptor index is global across all groups. */
+int sophia_sf_tab_entry_at(const struct sophia_sf_tabs *, size_t,
+                           struct sophia_sf_descriptor_entry *);
+int sophia_sf_shortcut_entry_encode(uint8_t dst[408], const struct sophia_sf_shortcut_entry *);
+int sophia_sf_shortcut_entry_decode(const uint8_t src[408], struct sophia_sf_shortcut_entry *);
+int sophia_sf_shortcut_entry_at(const struct sophia_sf_shortcuts *, size_t,
+                                struct sophia_sf_shortcut_entry *);
 #endif

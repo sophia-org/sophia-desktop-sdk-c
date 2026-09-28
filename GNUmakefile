@@ -39,7 +39,7 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' -e 's|@VERSION@|$(VERSION)|g' $< > $@
 
-FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test desktop_connection_test shell_session_custody_test shell_session_events_test native_session_test wm_files_test wm_session_test
+FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test desktop_connection_test shell_session_custody_test shell_session_events_test native_session_test wm_files_test wm_session_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
