@@ -61,13 +61,18 @@ complete 9P migration target.
 
 ## WM file row layouts
 
-`spec/sophia-wm-files-v1.kdl` and `spec/sophia-wm-files.md` are copied unmodified
-from Sophia `264080faeeabb1df69765a1c3cb26eb1bd30d265` (signed), which moves the
-8 ordinary and 14 extension fixed row layouts, their capability gates and scalar
+`spec/sophia-wm-files-v1.kdl` is copied unmodified from Sophia
+`264080faeeabb1df69765a1c3cb26eb1bd30d265` (signed), which moves the 8 ordinary
+and 14 extension fixed row layouts, the extension capability gates and scalar
 constants into the file contract's `row-layouts` block and spells its booleans
-`#true`. The copies at the parent commit were byte-identical to the previous
-pins, so these two files replace the `de776c68a` and `e9750572` copies above;
-no other contract input changes. Widths, kinds, maxima and values are unchanged.
+`#true`. `spec/sophia-wm-files.md` is copied unmodified from the later signed
+Sophia `4a03927421d13a9084295c5ace62c6d9de81d381`, which only narrows that
+document's claim: the schema owns extension gates, while ordinary row
+disclosure and additional capability dependencies stay in the typed file
+validators. The KDL is identical at both commits. The copies at `264080fae`'s
+parent were byte-identical to the previous pins, so these two files replace the
+`de776c68a` and `e9750572` copies above; no other contract input changes.
+Widths, kinds, maxima and values are unchanged.
 
 `tools/generate_wm_rows.py` now takes rows only from that block. The generated
 `src/sophia_wm_records.h` and `src/wm_files/rows.c` are byte-identical to the
