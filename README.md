@@ -18,13 +18,13 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-The development snapshot provides a generic nonblocking 9P2000.L client and
-shell file records and sessions for bar (r6), native launcher (r7), and persistent
-catalog/dock (r8). The existing shell IPC backend remains available for rollback
+Release 0.1.0 provides a generic nonblocking 9P2000.L client, shell file
+records and sessions for bar (r6), native launcher (r7) and persistent
+catalog/dock (r8), and the WM file codec and session. The existing shell IPC backend remains available for rollback
 and comparison. The imported WM socket codec is compatibility code.
-WM file record codecs and a bounded WM session are implemented and tested with
-a scripted peer. The production-export WM gate and product migration remain
-open. Output authority and admin file clients are not implemented yet.
+WM file record codecs and a bounded WM session pass scripted-peer tests and
+Sophia's production WM export gate, and Hagia uses them through thin Nim
+bindings. Output authority and admin file clients are not implemented yet.
 
 The WM file codec (`sophia_wm_files.h`) covers API-1 envelopes, typed scalar
 bodies, cycle causes, complete section bounds and negotiated section disclosure.
@@ -33,8 +33,8 @@ framing. These enforce structural wire rules; Session still validates scene,
 geometry, policy phase and authority. The focused codec test uses literal
 bodies and the pinned golden row corpus, not a live export. Regenerate fixed
 rows with `python3 tools/generate_wm_rows.py`; Python is not a library build
-dependency. `compatibility.json` keeps `wm_files=false` until the production
-WM export gate passes.
+dependency. `compatibility.json` sets `wm_files=true` because the
+production WM export gate has passed (Sophia `c4e17899e`).
 
 The WM session (`sophia_wm_session.h`) owns file bootstrap, immutable candidate
 submission, custody tickets, cumulative acknowledgements and snapshot pins.
@@ -79,7 +79,8 @@ make install PREFIX=/usr/local DESTDIR=/path/to/staging
 Headers install under `include/sophia-desktop`; pkg-config packages are
 `sophia-9p`, `sophia-desktop`, and optional `sophia-desktop-ipc`.
 The package name uses SDK terminology; `-dev` is reserved for a distribution's
-development package. No stable ABI or release is claimed for this snapshot.
+development package. 0.1.0 is the first release. It is consumed as a pinned source revision; no
+stable ABI is promised across 0.x releases.
 The machine-readable coverage declaration is [compatibility.json](compatibility.json).
 
 ## Contract and integration
