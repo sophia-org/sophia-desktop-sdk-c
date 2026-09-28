@@ -80,7 +80,10 @@ int sf_take_refused(const uint8_t *b, struct sophia_sf_refused *v)
 }
 int sf_check_submitted(const struct sophia_sf_submitted *v)
 {
-    if (!v->submission_id || v->candidate_kind < 256 || v->candidate_kind > 272)
+    if (!v->submission_id ||
+        !((v->candidate_kind >= 256 && v->candidate_kind <= 272) ||
+          v->candidate_kind == SOPHIA_SF_DESCRIPTOR_ACTIVATION_ACK ||
+          v->candidate_kind == SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION_ACK))
         return -1;
     return 0;
 }

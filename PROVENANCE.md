@@ -104,3 +104,21 @@ byte-exact distinct identity names when a catalog discloses identities. This
 documents the existing persistent identity bijection; labels may still repeat
 and plain launcher catalogs have no identities. No layout or code changes
 accompany this reference update. Other contract copies keep their earlier pins.
+
+## Proposed descriptor records (development only)
+
+`spec/proposed/descriptor-layout.kdl` and `descriptor-records.md` are unmodified
+copies of Sophia's proposed ADR `4oapm903` and its layout fragment from signed
+commit `0cbb7ea5b3aade7fee6ee271fe03e57e3cf2e78f`. Their original paths are
+`docs/notes/decisions/4oapm903-descriptor-layout-proposal.kdl` and
+`docs/notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md`.
+`spec/proposed/SHA256SUMS` binds these development inputs separately from the
+published contracts; `make check-spec` checks both sets. Relative links and the
+proposal's historical implementation status are preserved in the copied ADR.
+
+The descriptor control codec implements eight event bodies and the two
+activation acknowledgements from this proposal. Literal native file vectors
+test them independently of the Rust codec and the old socket frames. This is
+not acceptance of the contract, descriptor session support, or a release claim.
+Whole objects, presentation candidates, negotiated role selection and real
+export conformance remain to be implemented and gated in the C SDK path.

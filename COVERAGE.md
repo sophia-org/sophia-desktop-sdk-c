@@ -32,6 +32,15 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
+Development descriptor work currently covers the eight native control events
+and two activation acknowledgements in `spec/proposed/`. It validates native
+envelopes, identities, bounded query text and outcome relationships using
+literal vectors. The three whole objects, four presentation candidates and
+descriptor client/session negotiation are still missing from the C file path.
+No descriptor conformance peer or production-export result is claimed yet.
+The proposal remains separate from the published API-1 contract and does not
+change `compatibility.json`.
+
 For each role, inventory every former IPC request, response, event, capability,
 resource grant and terminal outcome against a named file-contract operation.
 The inventory must include negative behavior: refusal, backpressure, stale

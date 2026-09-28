@@ -2,6 +2,7 @@
 #define SOPHIA_SHELL_FILES_H
 #include "sophia_shell_files_content.h"
 #include "sophia_shell_files_roles.h"
+#include "sophia_shell_files_descriptors.h"
 #include <stddef.h>
 #include <stdint.h>
 #define SOPHIA_SF_HEADER_BYTES 32u
@@ -30,6 +31,14 @@ enum sophia_sf_kind {
     SOPHIA_SF_NATIVE_CLOSED = 43,
     SOPHIA_SF_CATALOG_ACTIVATION_OUTCOME = 44,
     SOPHIA_SF_INDICATOR_ACTIVATION_OUTCOME = 45,
+    SOPHIA_SF_DESCRIPTOR_OUTCOME = 46,
+    SOPHIA_SF_DESCRIPTOR_ACTIVATION = 47,
+    SOPHIA_SF_REFERENCE_REQUEST = 48,
+    SOPHIA_SF_REFERENCE_OUTCOME = 49,
+    SOPHIA_SF_DESCRIPTOR_LAUNCHER_REQUEST = 50,
+    SOPHIA_SF_DESCRIPTOR_LAUNCHER_OUTCOME = 51,
+    SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION = 52,
+    SOPHIA_SF_DESCRIPTOR_LAUNCH_OUTCOME = 53,
     SOPHIA_SF_NEGOTIATE = 256,
     SOPHIA_SF_ALLOCATION_REQUEST = 257,
     SOPHIA_SF_RESOURCE_BEGIN = 258,
@@ -47,6 +56,8 @@ enum sophia_sf_kind {
     SOPHIA_SF_CATALOG_CANDIDATE = 270,
     SOPHIA_SF_CATALOG_ACTIVATE = 271,
     SOPHIA_SF_INDICATOR_ACTIVATE = 272,
+    SOPHIA_SF_DESCRIPTOR_ACTIVATION_ACK = 274,
+    SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION_ACK = 278,
 };
 struct sophia_sf_header {
     uint16_t kind;
@@ -93,6 +104,16 @@ struct sophia_sf_record {
         struct sophia_sf_catalog_activation_outcome catalog_activation_outcome;
         struct sophia_sf_indicator_activate indicator_activate;
         struct sophia_sf_indicator_activation_outcome indicator_activation_outcome;
+        struct sophia_sf_descriptor_outcome descriptor_outcome;
+        struct sophia_sf_descriptor_activation descriptor_activation;
+        struct sophia_sf_reference_request reference_request;
+        struct sophia_sf_reference_outcome reference_outcome;
+        struct sophia_sf_descriptor_launcher_request descriptor_launcher_request;
+        struct sophia_sf_descriptor_launcher_outcome descriptor_launcher_outcome;
+        struct sophia_sf_descriptor_launcher_activation descriptor_launcher_activation;
+        struct sophia_sf_descriptor_launch_outcome descriptor_launch_outcome;
+        struct sophia_sf_descriptor_activation_ack descriptor_activation_ack;
+        struct sophia_sf_descriptor_launcher_activation_ack descriptor_launcher_activation_ack;
     } value;
 };
 /* Validate complete records; output arguments and destination stay unchanged on error.
