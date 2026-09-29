@@ -179,3 +179,20 @@ owner's 9P endpoint; recovery uses a compatible older whole release. The
 default remains experimental while latency and physical qualification are
 open. This reference update changes no library source, wire layout or custody
 rule. SDK compatibility source removal remains a separate follow-up.
+
+## Release 0.2.0: socket compatibility retirement
+
+Sophia's signed source retirement at `5b1d9ac4e` follows the accepted
+whole-release rollback decision. This SDK removes the shell/WM socket library,
+its headers, frame tests, socket schemas and frame corpora. Surviving spec
+files and the WM row corpus retain their original digests. The row generator
+reads the file contract alone; its generated codecs are unchanged.
+
+`sophia_desktop_select_shell` now takes the file path and output argument.
+Environment selection refuses the retired socket variable, including empty
+values. File connection authentication, bounded retry and ownership stay with
+the existing connection helper. The C file suites and generator checks pass
+in device-hidden isolation; release integration is recorded by Sophia's pin.
+The initial checksum-pruning attempt incorrectly treated already prefixed
+paths as relative to spec; the checksum gate refused it. The corrected list
+retains every existing file and passes without changing retained digests.
