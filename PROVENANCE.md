@@ -196,3 +196,9 @@ in device-hidden isolation; release integration is recorded by Sophia's pin.
 The initial checksum-pruning attempt incorrectly treated already prefixed
 paths as relative to spec; the checksum gate refused it. The corrected list
 retains every existing file and passes without changing retained digests.
+
+The release also imports `spec/sophia-shell-files.md` from signed Sophia
+`2ea546bac9836aa1aed61ddeb52cc552710a9b8a`. This documentation correction points
+to the file schema and records that the existing Limits fields and validation
+relations survive adapter retirement. No wire layout changes. Its new digest
+is recorded in `spec/SHA256SUMS`; all other retained digests are unchanged.
