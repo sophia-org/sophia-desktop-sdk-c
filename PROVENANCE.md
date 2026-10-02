@@ -309,3 +309,19 @@ and the cause being refused before an application sees it when the capability
 was not negotiated. Three bounded mutants are each killed by these tests:
 removing the cause's capability gate, removing the negotiated dependency, and
 accepting Held with any reason.
+
+## Release 0.5.1: golden row for the chord lifecycle
+
+Sophia's contract commit `86bf6504` changed the WM file KDL but not the outputs
+generated from it, so 0.5.0 copied a golden row corpus without the new row.
+Signed Sophia commit `3a1dce11febb64df2fc98a83f5ac1ff342287947`, the follow-up
+to `86bf6504` on `feature/generic-chording`, adds those generated outputs and
+nothing else. `spec/golden/sophia-wm-v1.records` is copied unmodified from it.
+Its one new line is the `configuration_action_lifecycle` sample: action 5,
+`held_ms` 150, reserved 0. The new digest replaces that entry in
+`spec/SHA256SUMS`; every other contract copy and digest is unchanged.
+
+`wm_files_test` decodes that row with the existing generated codec and now
+expects 23 golden rows. An unrecognised row still fails the test. Against the
+0.5.0 sources the new corpus fails with "unrecognized golden row". No library
+source changes; v0.5.0 is unchanged and remains tagged.

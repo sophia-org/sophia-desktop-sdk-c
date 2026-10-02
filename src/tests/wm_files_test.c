@@ -522,10 +522,11 @@ static void golden_rows(void) {
                                             v.role == 1 && v.action == 0);
     ROW(projection_presentation_binding,
         v.action == 5 && v.keycode == 28 && v.modifiers == 0);
+    ROW(configuration_action_lifecycle, v.action == 5 && v.held_ms == 150);
     assert(!"unrecognized golden row");
   row_done:;
   }
-  assert(!ferror(file) && seen == 22);
+  assert(!ferror(file) && seen == 23);
   assert(!fclose(file));
 }
 #undef ROW
