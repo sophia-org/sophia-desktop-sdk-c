@@ -105,7 +105,8 @@ int sophia_lc_submission(const struct sophia_lc_client *, uint64_t *id,
  * call; callers make it after event progress or a bounded backoff. The retry
  * reuses the epoch, ID and staged bytes. ARGUMENT when none waits. */
 int sophia_lc_submit_retry(struct sophia_lc_client *);
-/* One upload at a time. Begin submits ResourceBegin; on Admitted the SDK opens
+/* One upload at a time, one transaction: End and Cancel carry the begin's
+ * transaction. Begin submits ResourceBegin; on Admitted the SDK opens
  * upload/<slot>. Supply one chunk at a time once ready; the chunk is borrowed
  * until ready again (or pending ends). End is allowed after every declared
  * byte (width * height * 4) was written; End and Cancel are submissions. The
@@ -116,6 +117,6 @@ int sophia_lc_upload_begin(struct sophia_lc_client *,
 int sophia_lc_upload_chunk(struct sophia_lc_client *, const void *, size_t);
 int sophia_lc_upload_ready(const struct sophia_lc_client *);
 int sophia_lc_upload_pending(const struct sophia_lc_client *);
-int sophia_lc_upload_end(struct sophia_lc_client *, uint64_t transaction);
-int sophia_lc_upload_cancel(struct sophia_lc_client *, uint64_t transaction);
+int sophia_lc_upload_end(struct sophia_lc_client *);
+int sophia_lc_upload_cancel(struct sophia_lc_client *);
 #endif

@@ -380,8 +380,7 @@ int sophia_lc_upload_chunk(struct sophia_lc_client *c, const void *bytes,
   c->upload_stage = LC_UPLOAD_WRITE;
   return 0;
 }
-static int upload_step(struct sophia_lc_client *c, uint16_t kind,
-                       uint64_t transaction) {
+static int upload_step(struct sophia_lc_client *c, uint16_t kind) {
   struct sophia_lf_record r;
   int status;
   if (!c)
@@ -395,7 +394,7 @@ static int upload_step(struct sophia_lc_client *c, uint16_t kind,
     return SOPHIA_9P_ARGUMENT;
   memset(&r, 0, sizeof(r));
   r.header.kind = kind;
-  r.value.resource_step.transaction = transaction;
+  r.value.resource_step.transaction = c->upload.transaction;
   r.value.resource_step.resource = c->upload.resource;
   if (kind == SOPHIA_LF_RESOURCE_END)
     r.value.resource_step.total_bytes = c->upload_offset;
@@ -404,9 +403,9 @@ static int upload_step(struct sophia_lc_client *c, uint16_t kind,
     c->upload_stage = LC_UPLOAD_ENDING;
   return status;
 }
-int sophia_lc_upload_end(struct sophia_lc_client *c, uint64_t transaction) {
-  return upload_step(c, SOPHIA_LF_RESOURCE_END, transaction);
+int sophia_lc_upload_end(struct sophia_lc_client *c) {
+  return upload_step(c, SOPHIA_LF_RESOURCE_END);
 }
-int sophia_lc_upload_cancel(struct sophia_lc_client *c, uint64_t transaction) {
-  return upload_step(c, SOPHIA_LF_RESOURCE_CANCEL, transaction);
+int sophia_lc_upload_cancel(struct sophia_lc_client *c) {
+  return upload_step(c, SOPHIA_LF_RESOURCE_CANCEL);
 }

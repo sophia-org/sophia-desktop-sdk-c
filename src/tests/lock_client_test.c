@@ -304,6 +304,11 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
     return;
   }
   p->last_submit_id = id;
+  /* An upload is one transaction: End and Cancel carry the begin's. */
+  if ((c.header.kind == SOPHIA_LF_RESOURCE_END ||
+       c.header.kind == SOPHIA_LF_RESOURCE_CANCEL) &&
+      c.value.resource_step.transaction != p->begin.transaction)
+    p->submit_error = 22;
   if (p->submit_error) {
     error(p, tag, p->submit_error);
     p->submit_error = 0;
@@ -640,14 +645,14 @@ static void upload_and_present(void) {
          e->value.resource_status.status == SOPHIA_LF_ADMITTED);
   consume(r);
   assert(sophia_lc_upload_ready(&r->client));
-  assert(sophia_lc_upload_end(&r->client, 31) == SOPHIA_9P_ARGUMENT);
+  assert(sophia_lc_upload_end(&r->client) == SOPHIA_9P_ARGUMENT);
   assert(!sophia_lc_upload_chunk(&r->client, pixels, 12));
   assert(!sophia_lc_upload_ready(&r->client));
   assert(!spin(r) && sophia_lc_upload_ready(&r->client));
   assert(sophia_lc_upload_chunk(&r->client, pixels + 12, 21) == SOPHIA_9P_ARGUMENT);
   assert(!sophia_lc_upload_chunk(&r->client, pixels + 12, 20));
   assert(!spin(r));
-  assert(!sophia_lc_upload_end(&r->client, 31));
+  assert(!sophia_lc_upload_end(&r->client));
   e = next(r);
   assert(e->header.kind == SOPHIA_LF_RESOURCE_STATUS &&
          e->value.resource_status.status == SOPHIA_LF_ACCEPTED);
@@ -723,7 +728,7 @@ static void rejected_and_refused_uploads(void) {
   assert(e->value.resource_status.status == SOPHIA_LF_ADMITTED);
   consume(r);
   assert(sophia_lc_upload_ready(&r->client));
-  assert(!sophia_lc_upload_cancel(&r->client, 31));
+  assert(!sophia_lc_upload_cancel(&r->client));
   e = next(r);
   assert(e->value.resource_status.status == SOPHIA_LF_CANCELLED);
   consume(r);
