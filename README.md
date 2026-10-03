@@ -153,3 +153,21 @@ refuses the retired `SOPHIA_OUTPUT_SOCKET`.
 Revision 1 does not publish a head's current transform or VRR policy, and a
 proposal restates them for every enabled head. Callers must obtain explicit
 values rather than defaulting them.
+
+## Lock provider role (draft)
+
+The lock contract is a draft until Sophia merges it, and the files here can
+change with it. `sophia_lock_files.h` encodes and decodes the records in
+`spec/sophia-lock-files-v1.kdl`, checked against Sophia's golden records.
+
+`sophia_lock_client.h` owns one lock provider attach: it reads `api` and
+`limits`, negotiates (with any UI chords), and handles submission custody,
+cumulative acknowledgements, lock object fetches and uploads to
+`upload/<slot>`. Negotiated, Refused and Submitted are consumed internally;
+every other event is acknowledged only after the caller consumes it. An
+ObjectPublished is presented only after the SDK has read that exact lock
+object. One whose object was already replaced is consumed unread, because
+the newer object's announcement follows it. A provider renders only: it never
+sees the secret's characters and cannot enter or leave the locked state. The
+client does not discover the socket (`SOPHIA_LOCK_9P_SOCKET`) or reconnect;
+a replacement process gets a new connection and a new client.
