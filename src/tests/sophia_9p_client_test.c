@@ -312,6 +312,50 @@ static void reply_shape_poisoning(void)
         finish(&f);
     }
 }
+/* One Twrite of the largest payload, sent five bytes per service pass so that
+ * one pass spans the header and the payload. Returns the bytes on the wire. */
+static size_t sent_in_steps(struct fixture *f, int borrow, const uint8_t *data, size_t count,
+                            uint8_t *wire, size_t room)
+{
+    struct sophia_9p_handle h;
+    uint8_t ok[4] = {0};
+    size_t at = 0, steps = 0;
+    ssize_t r;
+    if (borrow)
+        assert(!sophia_9p_write_borrowed(&f->c, 1, 9, data, count, &h));
+    else
+        assert(!sophia_9p_write(&f->c, 1, 9, data, count, &h));
+    while (at < 23 + count) {
+        assert(!sophia_9p_service(&f->c, 5));
+        r = recv(f->fd[1], wire + at, room - at, MSG_DONTWAIT);
+        assert(r > 0 && r <= 5);
+        at += (size_t)r;
+        steps++;
+    }
+    assert(steps == (23 + count + 4) / 5);
+    put(ok, count, 4);
+    answer(f, 119, (uint16_t)get16(wire + 5), ok, 4);
+    assert(take(f, 119).count == count);
+    return at;
+}
+static void borrowed_write_sends_the_copied_bytes(void)
+{
+    static uint8_t data[4096 - 23], copied[4096], borrowed[4096];
+    struct fixture f;
+    struct sophia_9p_handle h;
+    size_t i, n;
+    for (i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)(i * 7 + 3);
+    init(&f, 2, 2);
+    n = sent_in_steps(&f, 0, data, sizeof(data), copied, sizeof(copied));
+    assert(n == 4096 && sent_in_steps(&f, 1, data, sizeof(data), borrowed, sizeof(borrowed)) == n);
+    /* Identical but for the tag. */
+    assert(!memcmp(copied, borrowed, 5) && !memcmp(copied + 7, borrowed + 7, n - 7));
+    assert(sophia_9p_write_borrowed(&f.c, 1, 0, data, sizeof(data) + 1, &h) ==
+           SOPHIA_9P_ARGUMENT);
+    assert(sophia_9p_write_borrowed(&f.c, 1, 0, NULL, 1, &h) == SOPHIA_9P_ARGUMENT);
+    finish(&f);
+}
 int main(void)
 {
     puts("tag wrap");
@@ -324,6 +368,7 @@ int main(void)
     preflight_and_errors();
     outstanding_read_fragmented_reply_and_eof();
     reply_shape_poisoning();
+    borrowed_write_sends_the_copied_bytes();
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;
 }
