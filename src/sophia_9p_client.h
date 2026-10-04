@@ -72,9 +72,16 @@ int sophia_9p_read(struct sophia_9p_client *, uint32_t fid, uint64_t offset, uin
                    struct sophia_9p_handle *);
 int sophia_9p_write(struct sophia_9p_client *, uint32_t fid, uint64_t offset, const void *data,
                     size_t count, struct sophia_9p_handle *);
-/* As sophia_9p_write, but the slot keeps only the Twrite header: data is sent
- * from the caller's bytes, which must stay unchanged until the request is
- * sent whole (its reply, a flush reply or the client's terminal error). */
+/* As sophia_9p_write, but the slot keeps only the Twrite header and the data
+ * is sent from the caller's bytes, unchanged and alive until a release point.
+ * A nonzero return borrows nothing. After a zero return the borrow ends when
+ * the caller observes one of:
+ *   - the request's reply through sophia_9p_peek;
+ *   - the reply to a sophia_9p_flush of it (slots are sent in order, so the
+ *     request was sent whole first);
+ *   - a terminal error from this client, after which nothing more is sent.
+ * Bytes are only read while the request is being sent; no reply is ever
+ * read from them. */
 int sophia_9p_write_borrowed(struct sophia_9p_client *, uint32_t fid, uint64_t offset,
                              const void *data, size_t count, struct sophia_9p_handle *);
 int sophia_9p_clunk(struct sophia_9p_client *, uint32_t fid, struct sophia_9p_handle *);

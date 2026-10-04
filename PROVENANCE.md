@@ -469,3 +469,26 @@ borrow release, wrong offsets and ignoring cancellation) fail named assertions.
 The strict C suites, generator checks and all suites under clang ASan/UBSan
 pass. Production integration and device throughput are separate Sophia gates;
 this record makes no throughput claim.
+
+## Release candidate 0.10.0: borrowed Twrite for lock uploads
+
+All contract copies remain byte-identical to 0.9.0. The generic 9P client adds
+`sophia_9p_write_borrowed`: the request slot keeps only the 23-byte Twrite
+header, and the payload is sent from the caller's bytes with `sendmsg`,
+resuming a partial send across header and payload. The header names the
+borrow's release points: the request's reply, the reply to its flush, or a
+terminal client error; a refused call borrows nothing. Each request slot
+gains one pointer, so `struct sophia_9p_client` grows and every consumer of
+the generic client, not only the lock role, must rebuild for this 0.x release.
+
+The lock client's upload writes use it. Their bytes were already borrowed
+until every issued write settles, which outlasts sending them, so the lock
+API and its lifetime rule are unchanged; the copy into request storage is
+gone. Other roles keep copied writes.
+
+`sophia_9p_client_test` sends a copied and a borrowed Twrite of the largest
+payload five bytes per service pass, so one pass spans header and payload,
+and requires identical wire bytes apart from the tag; it also checks the
+argument refusals. A mutant that sends the payload from the wrong offset
+fails that comparison. The strict C suites pass, and all suites pass under
+clang ASan/UBSan. This record makes no throughput claim.
