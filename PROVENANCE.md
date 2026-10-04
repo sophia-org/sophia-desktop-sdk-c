@@ -457,6 +457,9 @@ fid. A terminal connection is disposed rather than replayed.
 An upload Rerror now cancels the resource in single-write mode too, rather
 than only closing its fid. The peer's errno is retained; a pipelined short
 reply requests cancellation without inventing a remote errno.
+After the last outstanding reply, an internally queued Cancel creates its
+wire request in that same service call. Poll interest exposes the write
+immediately; applications do not need a timer to advance local SDK work.
 
 Local scripted controls cover a withheld first reply, reverse replies, input
 and ack progress with eight writes held, cancellation during an upload, short

@@ -294,7 +294,11 @@ static int drive(struct sophia_lc_client *c) {
   if ((r = events_drive(c)) || (r = ack_drive(c)) || (r = submit_drive(c)) ||
       (r = sophia_lc_internal_object_drive(c)))
     return r;
-  return sophia_lc_internal_upload_drive(c);
+  if ((r = sophia_lc_internal_upload_drive(c)))
+    return r;
+  /* Draining the last upload reply can queue Cancel here. Materialize its
+   * wire request before returning, so poll sees POLLOUT without a timer. */
+  return submit_drive(c);
 }
 static int receive(struct sophia_lc_client *c, const struct sophia_9p_reply *r) {
   if (lc_same(&c->boot_op, r->handle)) {

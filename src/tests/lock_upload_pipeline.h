@@ -134,6 +134,26 @@ static void pipeline_disconnect_latches(void) {
   /* Terminal wire never reads caller storage again; dispose before reuse. */
   rig_free(r);
 }
+static void drained_cancel_has_immediate_poll_interest(void) {
+  struct rig *r = pipeline_ready(8);
+  uint8_t pixels[128] = {0};
+  unsigned i;
+  r->peer.hold_upload = 1;
+  assert(!sophia_lc_upload_chunk(&r->client, pixels, sizeof(pixels)));
+  assert(!spin(r) && r->peer.held_uploads == 8);
+  assert(!sophia_lc_upload_cancel(&r->client));
+  assert(!sophia_9p_wants_write(&r->wire));
+  for (i = 0; i < 8; ++i)
+    release_upload_reply(&r->peer, i);
+  /* One call consumes the last replies and creates the Cancel write. A
+   * caller sleeping on IN alone would otherwise wait forever. */
+  assert(!sophia_lc_service(&r->client, 65536));
+  assert(r->client.submit_op.active && sophia_9p_wants_write(&r->wire));
+  assert(next(r)->value.resource_status.status == SOPHIA_LF_CANCELLED);
+  consume(r);
+  assert(!sophia_lc_upload_pending(&r->client));
+  rig_free(r);
+}
 static void upload_pipeline_tests(void) {
   struct rig *r = ready();
   assert(r->client.upload_window == 1);
@@ -145,6 +165,7 @@ static void upload_pipeline_tests(void) {
   pipeline_reverse_and_control();
   pipeline_terminal_status_drains();
   pipeline_disconnect_latches();
+  drained_cancel_has_immediate_poll_interest();
   pipeline_cancel_or_failure(0);
   pipeline_cancel_or_failure(1);
   pipeline_cancel_or_failure(2);
