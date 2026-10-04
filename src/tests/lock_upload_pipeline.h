@@ -81,6 +81,9 @@ static void pipeline_cancel_or_failure(unsigned fault) {
    * write. Storage stays borrowed and the writer stays open until all settle. */
   release_upload_reply(&r->peer, 0);
   assert(!spin(r));
+  /* Only a peer Rerror may supply a remote errno. A short reply is a local
+   * cancellation decision, not an invented error from the peer. */
+  assert(r->client.remote_error == (fault == 2 ? 5u : 0u));
   assert(r->client.upload_data == pixels && r->peer.upload_fid);
   assert(sophia_lc_upload_pending(&r->client));
   assert(!sophia_lc_upload_ready(&r->client));

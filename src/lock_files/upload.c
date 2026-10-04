@@ -70,7 +70,6 @@ int sophia_lc_internal_upload_write_reply(struct sophia_lc_client *c,
         else {
           /* Later writes may already have reached the old cursor. Never
            * guess which bytes the peer retained or replay them. */
-          c->remote_error = 5;
           c->upload_cancel_requested = 1;
         }
       }

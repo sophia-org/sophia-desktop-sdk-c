@@ -454,6 +454,9 @@ drains outstanding replies before releasing the borrowed frame. A short write
 in a pipeline cancels the resource instead of guessing the remote cursor.
 A terminal resource status also drains outstanding writes before closing its
 fid. A terminal connection is disposed rather than replayed.
+An upload Rerror now cancels the resource in single-write mode too, rather
+than only closing its fid. The peer's errno is retained; a pipelined short
+reply requests cancellation without inventing a remote errno.
 
 Local scripted controls cover a withheld first reply, reverse replies, input
 and ack progress with eight writes held, cancellation during an upload, short
