@@ -356,6 +356,149 @@ static void borrowed_write_sends_the_copied_bytes(void)
     assert(sophia_9p_write_borrowed(&f.c, 1, 0, NULL, 1, &h) == SOPHIA_9P_ARGUMENT);
     finish(&f);
 }
+/* Versioned at `msize` with the client's send buffer as small as the kernel
+ * allows, so a large request meets real backpressure. */
+static void init_small_send(struct fixture *f, uint32_t msize)
+{
+    struct sophia_9p_handle h;
+    uint8_t b[14];
+    int small = 1;
+    size_t n = sophia_9p_storage_bytes(msize, 2);
+    assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, f->fd));
+    assert(!setsockopt(f->fd[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)));
+    f->memory = malloc(n);
+    assert(f->memory);
+    assert(!sophia_9p_init(&f->c, f->fd[0], msize, 2, 2, f->memory, n));
+    assert(!sophia_9p_version(&f->c, &h));
+    assert(request(f, 100) == UINT16_MAX);
+    put(b, msize, 4);
+    put(b + 4, 8, 2);
+    memcpy(b + 6, "9P2000.L", 8);
+    answer(f, 101, UINT16_MAX, b, 14);
+    take(f, 101);
+}
+static uint8_t *pattern(size_t n)
+{
+    uint8_t *p = malloc(n);
+    size_t i;
+    assert(p);
+    for (i = 0; i < n; i++)
+        p[i] = (uint8_t)(i * 13 + 5);
+    return p;
+}
+/* Bytes the peer can read now, appended at `at`. */
+static size_t drain(struct fixture *f, uint8_t *wire, size_t at, size_t room)
+{
+    ssize_t r;
+    while ((r = recv(f->fd[1], wire + at, room - at, MSG_DONTWAIT)) > 0)
+        at += (size_t)r;
+    return at;
+}
+/* A borrowed request larger than the send buffer stops at EAGAIN partway and
+ * resumes as the peer reads, sending exactly the copied request's bytes. */
+static void borrowed_write_survives_backpressure(void)
+{
+    enum { MSIZE = 65536, COUNT = MSIZE - 23 };
+    static uint8_t wire[MSIZE];
+    struct fixture f;
+    struct sophia_9p_handle h;
+    uint8_t *data = pattern(COUNT), ok[4];
+    size_t at = 0, stalls = 0, i;
+    init_small_send(&f, MSIZE);
+    assert(!sophia_9p_write_borrowed(&f.c, 1, 0, data, COUNT, &h));
+    while (at < MSIZE) {
+        assert(!sophia_9p_service(&f.c, MSIZE));
+        if (sophia_9p_wants_write(&f.c))
+            stalls++;
+        at = drain(&f, wire, at, sizeof(wire));
+    }
+    assert(stalls > 0);
+    assert(get32(wire) == MSIZE && wire[4] == 118 && get32(wire + 19) == COUNT);
+    for (i = 0; i < COUNT; i++)
+        assert(wire[23 + i] == data[i]);
+    put(ok, COUNT, 4);
+    answer(&f, 119, (uint16_t)get16(wire + 5), ok, 4);
+    assert(take(&f, 119).count == COUNT);
+    free(data);
+    finish(&f);
+}
+/* Flushed while partly sent: the request is still sent whole before its
+ * Tflush, and after Rflush its bytes are never read again (freed here, so a
+ * sanitizer build sees any later read). */
+static void flush_of_a_partly_sent_borrowed_write(void)
+{
+    static uint8_t wire[8192];
+    struct fixture f;
+    struct sophia_9p_handle h, fh;
+    struct sophia_9p_reply r;
+    uint8_t *data = pattern(4096 - 23);
+    size_t at;
+    init(&f, 2, 2);
+    assert(!sophia_9p_write_borrowed(&f.c, 1, 0, data, 4096 - 23, &h));
+    assert(!sophia_9p_service(&f.c, 10));
+    at = drain(&f, wire, 0, sizeof(wire));
+    assert(at == 10);
+    assert(!sophia_9p_flush(&f.c, h, &fh));
+    while (at < 4096 + 9) {
+        assert(!sophia_9p_service(&f.c, 4096));
+        at = drain(&f, wire, at, sizeof(wire));
+    }
+    assert(at == 4096 + 9 && !memcmp(wire + 23, data, 4096 - 23));
+    assert(wire[4096 + 4] == 108 && get16(wire + 4096 + 7) == get16(wire + 5));
+    answer(&f, 109, (uint16_t)get16(wire + 4096 + 5), NULL, 0);
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_peek(&f.c, &r) && r.type == 109);
+    free(data);
+    assert(!sophia_9p_consume(&f.c, r.handle));
+    assert(!sophia_9p_service(&f.c, 4096));
+    assert(!sophia_9p_wants_write(&f.c));
+    finish(&f);
+}
+/* The peer goes away with the request partly sent: the terminal wire error
+ * ends the borrow, and the client never touches the bytes again. */
+static void terminal_close_with_borrowed_bytes_unsent(void)
+{
+    struct fixture f;
+    struct sophia_9p_handle h;
+    uint8_t *data = pattern(4096 - 23);
+    int r;
+    init(&f, 2, 2);
+    assert(!sophia_9p_write_borrowed(&f.c, 1, 0, data, 4096 - 23, &h));
+    assert(!sophia_9p_service(&f.c, 10));
+    close(f.fd[1]);
+    r = sophia_9p_service(&f.c, 4096);
+    assert(r == SOPHIA_9P_IO || r == SOPHIA_9P_CLOSED);
+    free(data);
+    assert(sophia_9p_service(&f.c, 4096) == r);
+    assert(sophia_9p_write_borrowed(&f.c, 1, 0, "x", 1, &h) == r);
+    close(f.fd[0]);
+    free(f.memory);
+}
+/* A reply to a borrowed request still being sent is a protocol violation:
+ * the connection fails and the borrow ends with it. */
+static void early_reply_to_a_queued_borrowed_write(void)
+{
+    enum { MSIZE = 65536, COUNT = MSIZE - 23 };
+    static uint8_t wire[MSIZE];
+    struct fixture f;
+    struct sophia_9p_handle h;
+    uint8_t *data = pattern(COUNT), ok[4] = {1, 0, 0, 0};
+    size_t at;
+    int r = 0;
+    init_small_send(&f, MSIZE);
+    assert(!sophia_9p_write_borrowed(&f.c, 1, 0, data, COUNT, &h));
+    assert(!sophia_9p_service(&f.c, MSIZE));
+    assert(sophia_9p_wants_write(&f.c));
+    at = drain(&f, wire, 0, 23);
+    assert(at >= 7);
+    answer(&f, 119, (uint16_t)get16(wire + 5), ok, 4);
+    while (!r)
+        r = sophia_9p_service(&f.c, MSIZE);
+    assert(r == SOPHIA_9P_INVALID);
+    free(data);
+    assert(sophia_9p_service(&f.c, MSIZE) == SOPHIA_9P_INVALID);
+    finish(&f);
+}
 int main(void)
 {
     puts("tag wrap");
@@ -369,6 +512,10 @@ int main(void)
     outstanding_read_fragmented_reply_and_eof();
     reply_shape_poisoning();
     borrowed_write_sends_the_copied_bytes();
+    borrowed_write_survives_backpressure();
+    flush_of_a_partly_sent_borrowed_write();
+    terminal_close_with_borrowed_bytes_unsent();
+    early_reply_to_a_queued_borrowed_write();
     puts("sophia_9p_client: R4-1..R4-7 controls passed");
     return 0;
 }
