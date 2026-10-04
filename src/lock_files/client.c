@@ -29,6 +29,7 @@ int sophia_lc_init(struct sophia_lc_client *c, struct sophia_9p_client *wire,
     return SOPHIA_9P_ARGUMENT;
   memset(c, 0, sizeof(*c));
   c->wire = wire;
+  c->upload_window = 1;
   c->offer = *offer;
   c->next_submission = 1;
   c->object_fid = c->upload_fid = UINT32_MAX;
@@ -334,7 +335,7 @@ static int receive(struct sophia_lc_client *c, const struct sophia_9p_reply *r) 
     c->upload_op.active = 0;
     return sophia_lc_internal_upload_reply(c, r);
   }
-  return SOPHIA_9P_INVALID;
+  return sophia_lc_internal_upload_write_reply(c, r);
 }
 int sophia_lc_service(struct sophia_lc_client *c, size_t budget) {
   struct sophia_9p_reply reply;
