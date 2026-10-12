@@ -530,3 +530,12 @@ and the normal suite passes again. `t317-sdk-launch-03` has self-excluding
 SHA256SUMS hash `dfeff9a787310c59ae5faa8eff5c7112cd9eb8e19104a675b5c8b8b74ca6319d`.
 Only this result paragraph follows the captured candidate; executables are
 recorded by path/hash, never copied to evidence.
+
+## Normal lock-provider admission contract
+
+`spec/sophia-lock-files.md` and `spec/factotum-launch-authentication.md` now
+come from signed Sophia `3687343001243e0fbc9a6f69bbb5c5e64390321a`. They describe
+normal provider startup through the protected launch channel, Factotum afid
+exchange, immutable identity and current custody. Record layouts and SDK code
+are unchanged. Sophia's provider join uses this SDK's existing launch helper
+and admitted-root lock constructor; physical/client rollout remains separate.
