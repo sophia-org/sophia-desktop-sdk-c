@@ -30,6 +30,14 @@ symlinks, supports long logical names and never changes working directory.
 Local socket tests cover these properties; Session launch integration remains
 a separate qualification.
 
+To authenticate another endpoint from the same approved recipe, use
+`sophia_la_next_endpoint()` with a completed conversation and a fresh role
+client. It transfers exclusive use of the quiescent launch relay, refusing
+pending requests, replies or fids. The earlier role client and root remain
+unchanged. Never drive the previous authentication conversation again or share
+the relay between concurrent drivers. Failure handling retains the existing
+launch-client contract; no endpoint falls back to unauthenticated attach.
+
 Release 0.9.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), WM and output file codecs and sessions, and an experimental
