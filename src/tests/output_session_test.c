@@ -494,6 +494,9 @@ static struct rig *rig_new(uint64_t request, uint64_t granted,
     assert(!sophia_os_open_fd(r->session, r->client_fd, &cfg, r->storage,
                               sophia_os_storage_bytes(8192), 0));
   }
+  assert(((sophia_os_poll_events(r->session) & POLLOUT) ||
+          sophia_os_timeout(r->session, 0) == 0) &&
+         "output bootstrap must schedule its first request without peer input");
   return r;
 }
 static struct rig *rig(void) { return rig_new(3, 3, 1, 1); }

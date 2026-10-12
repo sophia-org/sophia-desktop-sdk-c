@@ -81,7 +81,8 @@ int sophia_os_open_attached(struct sophia_os *s, struct sophia_9p_client *wire,
   s->wire = wire;
   s->root = root;
   s->bootstrap = 2; /* Start at api: never reset or reattach the admitted wire. */
-  return 0;
+  r = os_drive(s);
+  return r ? os_finish(s, r) : 0;
 }
 int os_finish(struct sophia_os *s, int status) {
   if (os_final(s))

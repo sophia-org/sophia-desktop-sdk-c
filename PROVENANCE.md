@@ -2,6 +2,19 @@
 
 ## Authenticated output handoff (t317)
 
+The first joined Session run exposed an unscheduled bootstrap after successful
+authentication: the borrowed constructor returned without queuing `api`, so a
+poll-driven caller waited until its deadline. The constructor now starts the
+same bounded bootstrap driver as the fresh-fd entry point. Both constructors
+must immediately expose writable work or a zero timeout. Removing that drive
+fails `output bootstrap must schedule its first request without peer input`.
+Device-hidden full `make check`, the focused omission control and the restored
+full suite pass. Their self-excluding manifest identities are respectively:
+
+- `t317-output-sdk-schedule-01`: `6f12d2bfef802194d3c66766358dde4c0d21f6086a78437e7a35bbf8dc0992f0`.
+- `t317-output-sdk-schedule-control-01`: `1bdf8b93dced799287b2df53c84f9fd4349f9e7cb48978e66676edfcf7e3102c`.
+- `t317-output-sdk-schedule-restored-01`: `6f12d2bfef802194d3c66766358dde4c0d21f6086a78437e7a35bbf8dc0992f0`.
+
 `spec/sophia-output-files.md` is copied from signed Sophia commit
 `d5c9b63a3aa0fc088d45467700b6c131a1902c36`. It specifies the verified-afid
 startup and exact admitted-root handoff; no output record layout changes.
