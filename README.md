@@ -18,6 +18,18 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
+`sophia_namespace.h` implements the pinned
+[`namespace-discovery` contract](spec/namespace-discovery.md). Parsing uses
+caller-owned bounded storage. On Linux, `sophia_ns_open()` pins an absolute
+generation directory and reads its discovery file; the caller closes the
+returned directory descriptor. `sophia_ns_connect()` returns an owned,
+nonblocking, close-on-exec socket for a declared endpoint. Check the endpoint's
+protocol, interface and version, then perform its normal authentication.
+`SOPHIA_NAMESPACE_DIR` is a location, never a credential. Lookup rejects
+symlinks, supports long logical names and never changes working directory.
+Local socket tests cover these properties; Session launch integration remains
+a separate qualification.
+
 Release 0.9.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
 catalog/dock (r8), WM and output file codecs and sessions, and an experimental
