@@ -1,5 +1,33 @@
 # Extraction and contract provenance
 
+## Authenticated output handoff (t317)
+
+`spec/sophia-output-files.md` is copied from signed Sophia commit
+`d5c9b63a3aa0fc088d45467700b6c131a1902c36`. It specifies the verified-afid
+startup and exact admitted-root handoff; no output record layout changes.
+`sophia_os_open_attached` borrows that quiescent wire and sole root, refusing
+pending work, unknown roots, insufficient bounds and overlapping storage.
+It begins with `api`, leaving transport identity and negotiated 9P state intact.
+
+Device-hidden `make check` passes with the existing scripted output lifecycle
+scenarios exercised through both constructors. These supply admission and do
+not claim a real Factotum exchange. Forcing the new constructor to plain attach
+fails at `output role handoff must not attach again`; the restored full suite
+passes. An earlier reset control was stopped for a wrong prediction: the
+generic 9P client's phase guard refused Tversion before the scripted peer saw
+it, failing the progress assertion. That STOP record is retained unchanged.
+
+Evidence package manifest SHA-256 identities:
+
+- `t317-output-sdk-02`: `50f00c3dcb7348cbf57cab1617dbdd924cb0dd8997a4cc0633eb4fd1b3ffbc28`.
+- `t317-output-sdk-reattach-control-01`: `cc952882e5c182884ea0c8bf8b966f9b2e364faf68c386d3916faec743f42053`.
+- `t317-output-sdk-restored-02`: `50f00c3dcb7348cbf57cab1617dbdd924cb0dd8997a4cc0633eb4fd1b3ffbc28`.
+
+The packages record dynamic candidate hashes and executable paths/hashes;
+no binaries are copied. The normative copy and its digest were updated after
+the code runs and checked separately. Production output-owner interoperability
+and migration of the native proof remain Sophia integration work.
+
 Initial source: `https://github.com/sophia-org/sophia`, commit
 `987cfd393a11edaa99e8b3c58be80d21167fb287` (signed t252 merge).
 The source tree was copied from `bindings/c/` into `src/`, preserving paths
