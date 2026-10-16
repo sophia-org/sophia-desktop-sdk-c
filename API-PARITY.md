@@ -5,7 +5,6 @@ This matrix maps shell event-loop and content-admission operations; it is not a 
 inventory. Contract inputs are the pinned API-1 shell files and WM custody
 rules in `spec/`, checked by `spec/SHA256SUMS`. C comparison source:
 `sophia-desktop-sdk-c` `a90e235` (unreleased 0.10.0-dev; see below).
-Rust comparison source: `sophia-desktop-sdk-rs` `5b72169`.
 
 | Operation | Native C | Native Rust | Contract or remaining difference |
 | --- | --- | --- | --- |
@@ -560,3 +559,7 @@ settled prefix and queued tail. [Administration](ADMIN-PARITY.md) now pins the
 accepted file contract and names the missing operations in both SDKs. Broker
 files remain design-only under Sophia t314; portal requester and recipient
 interfaces need separate typed coverage and must not share authority.
+
+Admin map 2 adds equivalent allocation-free info decoding in C and Rust.
+It validates service identity and advertised timeout fields only; neither
+SDK yet has an administrative session client.

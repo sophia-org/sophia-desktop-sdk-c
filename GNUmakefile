@@ -10,6 +10,7 @@ override CFLAGS += -std=c99 -Wall -Wextra -Werror -pedantic
 CPPFLAGS += -Isrc
 
 NINE_P = $(sort $(wildcard src/nine_p/*.c))
+ADMIN_FILES = $(sort $(wildcard src/admin_files/*.c))
 FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c src/lock_files/*.c src/launch_auth/*.c src/namespace/*.c)) src/desktop_connection.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
 LIBRARIES = $(BUILD)/libsophia-9p.a $(BUILD)/libsophia-desktop.a
@@ -24,7 +25,7 @@ $(BUILD)/src/%.o: src/%.c
 
 $(BUILD)/libsophia-9p.a: $(call objects,$(NINE_P))
 	$(AR) rcs $@ $^
-$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES))
+$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES))
 	$(AR) rcs $@ $^
 $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
@@ -32,6 +33,7 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 
 FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test
 FILE_TESTS += namespace_test
+FILE_TESTS += admin_files_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
@@ -66,4 +68,4 @@ install: all
 clean:
 	rm -rf $(BUILD)
 
--include $(patsubst %.o,%.d,$(call objects,$(NINE_P) $(FILES)))
+-include $(patsubst %.o,%.d,$(call objects,$(NINE_P) $(FILES) $(ADMIN_FILES)))

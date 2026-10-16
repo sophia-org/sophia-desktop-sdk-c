@@ -1,5 +1,13 @@
 # Extraction and contract provenance
 
+## t333 administrative info decoder
+
+The new passive info decoder is implemented from the pinned
+`spec/sophia-admin-files.md` grammar (Sophia `baedfd0c9`), independently
+in C and Rust. It imports no runtime owner or transport. Both parse into
+fixed-size values without heap allocation; literal and malformed-boundary
+tests pass. Remaining administrative codecs and the client are still missing.
+
 ## t333 Rust WM protocol foundation
 
 Rust now extracts Sophia's neutral WM codecs as `sophia-wm-protocol`. Its schema,
