@@ -651,6 +651,33 @@ static void retry_refusal_and_capacity(void) {
   drop(r);
 }
 
+static void all_output_outcomes_remain_ordered(void) {
+  struct rig *r = rig();
+  unsigned kind;
+  ready(r);
+  for (kind = SOPHIA_OF_VALIDATED; kind <= SOPHIA_OF_FAILED; ++kind) {
+    struct sophia_of_proposal v = proposal(kind);
+    const struct sophia_of_record *e;
+    uint64_t ticket, sequence;
+    r->peer.outcome_after = kind;
+    assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+    e = next_event(r);
+    assert(e && e->header.kind == SOPHIA_OF_OUTCOME);
+    assert(e->value.outcome.transaction == kind);
+    assert(e->value.outcome.outcome == kind);
+    sequence = e->header.sequence;
+    settle(r, 10);
+    assert(!sophia_os_event(r->session, &e));
+    assert(e->header.sequence == sequence && r->peer.acked < sequence);
+    assert(custody(r, ticket, NULL) == SOPHIA_OS_SUBMITTED);
+    assert(!sophia_os_consume(r->session));
+    settle(r, 10);
+    assert(r->peer.acked == sequence);
+    assert(sophia_os_state(r->session) == SOPHIA_OS_READY);
+  }
+  drop(r);
+}
+
 static void out_of_order_domains_and_ealready_refusal(void) {
   struct rig *r = rig();
   struct sophia_of_proposal v = proposal(50);
@@ -762,6 +789,7 @@ int main(void) {
     proposal_outcome_and_republication();
     retry_refusal_and_capacity();
     out_of_order_domains_and_ealready_refusal();
+    all_output_outcomes_remain_ordered();
     observe_only_and_refusal();
     protocol_faults();
   }
