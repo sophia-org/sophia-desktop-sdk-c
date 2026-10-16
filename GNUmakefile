@@ -44,6 +44,7 @@ FILE_TESTS += admin_command_test
 FILE_TESTS += admin_session_test
 FILE_TESTS += admin_connecting_test
 FILE_TESTS += portal_frame_test
+FILE_TESTS += portal_capture_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif

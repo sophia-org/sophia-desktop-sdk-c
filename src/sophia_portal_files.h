@@ -6,6 +6,32 @@
 extern "C" {
 #endif
 #define SOPHIA_PF_FRAME_INFO_BYTES 64u
+#define SOPHIA_PF_CAPTURE_BYTES 24u
+#define SOPHIA_PF_CAPTURE_STATUS_BYTES 32u
+struct sophia_pf_capture_request {
+  uint64_t serial, output;
+};
+enum sophia_pf_capture_state {
+  SOPHIA_PF_IDLE,
+  SOPHIA_PF_QUEUED,
+  SOPHIA_PF_CAPTURING,
+  SOPHIA_PF_READY,
+  SOPHIA_PF_DENIED,
+  SOPHIA_PF_UNAVAILABLE,
+  SOPHIA_PF_PRESSURE,
+  SOPHIA_PF_CANCELLED
+};
+struct sophia_pf_capture_status {
+  uint64_t serial, output;
+  enum sophia_pf_capture_state state;
+};
+/* No allocation. Failure returns -1 and leaves output unchanged. Encoding
+ * writes exactly 24 bytes, leaving any remaining capacity untouched. Ordering
+ * and admission belong to the client; status conveys no frame authority. */
+int sophia_pf_encode_capture(struct sophia_pf_capture_request request,
+                             void *bytes, size_t capacity);
+int sophia_pf_decode_capture_status(const void *bytes, size_t length,
+                                    struct sophia_pf_capture_status *out);
 #define SOPHIA_PF_IMAGE_MAX_BYTES UINT64_C(67108864)
 /* Passive RGBA8 metadata; no pixel storage or authority is retained. */
 struct sophia_pf_frame_info {
