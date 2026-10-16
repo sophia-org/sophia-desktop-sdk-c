@@ -463,6 +463,61 @@ static void ack_faults_and_revocation_keep_custody(void) {
     wr_drop(r);
   }
 }
+/* Literal API-1 records, independent of the encoder. Outcomes are application
+ * observations, including Disconnected; they do not close the transport. */
+static void profile_commands_and_outcomes_are_ordered(void) {
+  struct wm_rig *r = wr_new();
+  unsigned kind, outcome, i;
+  uint64_t first;
+  wr_ready(r);
+  steps(r, 30);
+  first = r->peer.sequence + 1;
+  for (kind = 18; kind <= 25; ++kind) {
+    if (kind == 22) continue; /* Cycle causes have separate controls. */
+    for (outcome = 1; outcome <= (kind <= 20 ? 1u : kind == 25 ? 3u : 5u); ++outcome) {
+      size_t body = kind <= 20 || kind == 25 ? 48 : kind == 23 ? 32 : 24;
+      uint8_t *b = r->peer.journal + r->peer.journal_size;
+      memset(b, 0, 32 + body);
+      wp_put(b, 32 + body, 4); wp_put(b + 4, 1, 2); wp_put(b + 6, kind, 2);
+      wp_put(b + 8, WP_EPOCH, 8); wp_put(b + 24, ++r->peer.sequence, 8);
+      wp_put(b + 32, 40, 8); wp_put(b + 40, 3, 8);
+      if (kind <= 20) memset(b + 48, 7, 32);
+      else if (kind == 25) {
+        wp_put(b + 48, 1, 8); wp_put(b + 56, 9, 8); wp_put(b + 64, 1, 8);
+        wp_put(b + 72, outcome, 2);
+      } else if (kind == 23) {
+        wp_put(b + 48, 9, 8); wp_put(b + 56, outcome, 2);
+      } else wp_put(b + 48, outcome, 2);
+      r->peer.journal_size += 32 + body;
+    }
+  }
+  for (i = 0; i < 21; ++i) {
+    const struct sophia_wf_record *event, *held;
+    uint16_t actual;
+    steps(r, 10);
+    assert(!sophia_ws_event(r->session, &event));
+    assert(event->header.sequence == first + i && r->peer.acked < first + i);
+    if (i < 3) {
+      assert(event->header.kind == 18 + i);
+      assert(event->value.profile.transaction == 40 && event->value.profile.generation == 3);
+      assert(event->value.profile.digest[0] == 7 && event->value.profile.digest[31] == 7);
+    } else {
+      assert(event->header.kind == (i < 8 ? 21 : i < 13 ? 23 : i < 18 ? 24 : 25));
+      if (i < 8) actual = event->value.configuration_outcome.outcome;
+      else if (i < 13) actual = event->value.projection_outcome.outcome;
+      else if (i < 18) actual = event->value.session_operation_outcome.outcome;
+      else actual = event->value.presentation_receipt.outcome;
+      assert(actual == (i < 18 ? (i - 3) % 5 + 1 : i - 17));
+    }
+    steps(r, 2);
+    assert(!sophia_ws_event(r->session, &held) && held == event);
+    assert(!sophia_ws_consume(r->session));
+  }
+  steps(r, 20);
+  assert(r->peer.acked == first + 20);
+  assert(sophia_ws_state(r->session) == SOPHIA_WS_READY);
+  wr_drop(r);
+}
 static void snapshot_retry_is_paced_and_truncation_refuses(void) {
   struct wm_rig *r = wr_new();
   const struct sophia_wf_record *snapshot;
@@ -770,6 +825,7 @@ int main(void) {
     RUN(impossible_offer_refuses_before_submission);
     RUN(event_lengths_and_sequences_fail_immediately);
     RUN(ack_faults_and_revocation_keep_custody);
+    RUN(profile_commands_and_outcomes_are_ordered);
     RUN(snapshot_retry_is_paced_and_truncation_refuses);
     RUN(full_retained_journal_still_observes_submitted);
     RUN(presentation_receipt_requires_negotiated_capability);
