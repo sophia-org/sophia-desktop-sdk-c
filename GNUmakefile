@@ -11,6 +11,7 @@ CPPFLAGS += -Isrc
 
 NINE_P = $(sort $(wildcard src/nine_p/*.c))
 ADMIN_FILES = $(sort $(wildcard src/admin_files/*.c))
+PORTAL_FILES = $(sort $(wildcard src/portal_files/*.c))
 FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c src/lock_files/*.c src/launch_auth/*.c src/namespace/*.c)) src/desktop_connection.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
 LIBRARIES = $(BUILD)/libsophia-9p.a $(BUILD)/libsophia-desktop.a
@@ -25,7 +26,7 @@ $(BUILD)/src/%.o: src/%.c
 
 $(BUILD)/libsophia-9p.a: $(call objects,$(NINE_P))
 	$(AR) rcs $@ $^
-$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES))
+$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES) $(PORTAL_FILES))
 	$(AR) rcs $@ $^
 $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
@@ -42,6 +43,7 @@ FILE_TESTS += admin_startup_test
 FILE_TESTS += admin_command_test
 FILE_TESTS += admin_session_test
 FILE_TESTS += admin_connecting_test
+FILE_TESTS += portal_frame_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
@@ -79,4 +81,4 @@ install: all
 clean:
 	rm -rf $(BUILD)
 
--include $(patsubst %.o,%.d,$(call objects,$(NINE_P) $(FILES) $(ADMIN_FILES)))
+-include $(patsubst %.o,%.d,$(call objects,$(NINE_P) $(FILES) $(ADMIN_FILES) $(PORTAL_FILES)))
