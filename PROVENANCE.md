@@ -1,5 +1,17 @@
 # Extraction and contract provenance
 
+## t333 permit expiry before candidate refusal
+
+`test_expiry_before_submit_refusal` failed on `c678319`: after a locally admitted
+candidate, authoritative permit expiry followed by submit refusal recreated a
+wait for the expiry already consumed. The helper then refused every new demand.
+Late terminal permit observations now clear the consumed permit identity, and
+candidate refusal restores a wait only while that identity remains outstanding.
+An old terminal record cannot disturb a newer demand. The regression and full
+`make check` pass; Rust's paired lifecycle controls cover both observation orders.
+This changes no public layout or wire contract. Production export qualification
+and SDK pin adoption remain pending under t333.
+
 ## t333 reservation identity correction
 
 Two live C sessions could issue the same reservation serial and accept each

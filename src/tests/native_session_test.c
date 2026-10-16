@@ -873,8 +873,29 @@ static void test_terminal(void)
     assert(sophia_ns_next(&n, 2000, &e) == SOPHIA_9P_CLOSED);
     assert(sophia_ns_input_reserve(&n, 0) == SOPHIA_9P_CLOSED);
 }
+static void test_expiry_before_submit_refusal(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_scene s = scene();
+    uint64_t t;
+    ready(&n);
+    assert(!sophia_ns_present(&n, &s, 1050, &t));
+    permit(1, 2, 77, 0);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    F.outcomes[t] = SOPHIA_SS_REFUSED;
+    assert(!sophia_ns_service(&n, 1200));
+    /* The authoritative expiry already arrived; do not await it twice. */
+    assert(!sophia_ns_demand(&n, 1, 1200, &t));
+    permit(2, 1, 78, 100);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    permit(1, 2, 77, 0);
+    finish(&n, SOPHIA_NS_EV_PERMIT);
+    assert(!sophia_ns_present(&n, &s, 1250, &t));
+}
+
 int main(void)
 {
+    test_expiry_before_submit_refusal();
     test_init();
     test_catalog_invalidation();
     test_pacing();

@@ -73,8 +73,16 @@ static int ns_permit(struct sophia_ns *n, const struct sophia_sf_frame_permit *v
 {
     struct sophia_ns_permit *p = &n->permit;
     n->head.kind = SOPHIA_NS_EV_PERMIT;
-    if (!p->demand || v->demand_id != p->demand_id)
-        return v->demand_id && v->demand_id == p->last_demand_id ? 0 : -1;
+    if (!p->demand || v->demand_id != p->demand_id) {
+        if (!v->demand_id || v->demand_id != p->last_demand_id)
+            return -1;
+        /* Expiry may precede a locally observed candidate submit refusal.
+         * Remember that end so refusal cannot resurrect the old wait. Do
+         * not disturb a different, newer demand already in progress. */
+        if (!p->demand && v->state != 1)
+            p->permit_id = 0;
+        return 0;
+    }
     n->head.current = 1;
     if (v->state == 1) {
         /* Advisory only: the server's TTL starts at its grant-time sample. */
@@ -171,7 +179,7 @@ void ns_service_content(struct sophia_ns *n, uint64_t now_ms)
             /* Never journaled: its permit is still the server's until it
              * ends, so a new demand waits for that FramePermit. */
             memset(&n->pending, 0, sizeof(n->pending));
-            if (!n->permit.demand && n->permit.last_demand_id) {
+            if (!n->permit.demand && n->permit.last_demand_id && n->permit.permit_id) {
                 n->permit.demand = 1;
                 n->permit.granted = 0;
                 n->permit.demand_id = n->permit.last_demand_id;
