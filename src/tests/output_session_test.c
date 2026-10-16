@@ -651,6 +651,35 @@ static void retry_refusal_and_capacity(void) {
   drop(r);
 }
 
+static void out_of_order_domains_and_ealready_refusal(void) {
+  struct rig *r = rig();
+  struct sophia_of_proposal v = proposal(50);
+  const struct sophia_of_record *e;
+  uint64_t ticket, next;
+  uint32_t wire;
+  ready(r);
+  r->peer.outcome_after = SOPHIA_OF_VALIDATED;
+  assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+  e = next_event(r);
+  assert(e && e->value.outcome.transaction == 50);
+  assert(!sophia_os_consume(r->session));
+  settle(r, 10);
+  v = proposal(3);
+  assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+  e = next_event(r);
+  assert(e && e->value.outcome.transaction == 3);
+  assert(!sophia_os_consume(r->session));
+  settle(r, 10);
+  assert(!sophia_os_next_transaction(r->session, &next) && next == 51);
+  r->peer.submit_error = 114;
+  v = proposal(4);
+  assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+  settle(r, 20);
+  assert(custody(r, ticket, &wire) == SOPHIA_OS_REFUSED_SUBMIT && wire == 114);
+  assert(sophia_os_state(r->session) == SOPHIA_OS_READY);
+  drop(r);
+}
+
 static void observe_only_and_refusal(void) {
   struct rig *r = rig_new(3, 1, 1, 1);
   struct sophia_of_proposal v = proposal(1);
@@ -732,6 +761,7 @@ int main(void) {
     bootstrap_and_topology();
     proposal_outcome_and_republication();
     retry_refusal_and_capacity();
+    out_of_order_domains_and_ealready_refusal();
     observe_only_and_refusal();
     protocol_faults();
   }
