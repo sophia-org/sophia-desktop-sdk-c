@@ -805,6 +805,24 @@ static void rejected_and_refused_uploads(void) {
   rig_free(r);
 }
 
+static void negotiation_retry_with_six_requests(void) {
+  struct sophia_lf_negotiate o = offer();
+  struct rig *r = rig_new_capacity(&o, NULL, 6);
+  unsigned submits;
+  r->peer.submit_again = 1;
+  assert(!spin(r));
+  assert(!sophia_lc_ready(&r->client));
+  submits = r->peer.submits;
+  assert(!spin(r) && r->peer.submits == submits);
+  assert(!sophia_lc_submit_retry(&r->client));
+  assert(next(r)->header.kind == SOPHIA_LF_OBJECT_PUBLISHED);
+  consume(r);
+  assert(sophia_lc_ready(&r->client));
+  assert(!sophia_lc_upload_window(&r->client, 1));
+  assert(sophia_lc_upload_window(&r->client, 2) == SOPHIA_9P_ARGUMENT);
+  rig_free(r);
+}
+
 static void again_then_retry(void) {
   struct rig *r = ready();
   struct sophia_lf_record v;
@@ -1005,6 +1023,7 @@ int main(void) {
   upload_pipeline_tests();
   rejected_and_refused_uploads();
   again_then_retry();
+  negotiation_retry_with_six_requests();
   contradictory_retry_preserves_custody();
   custody_waits_for_ack();
   refused_negotiation();
