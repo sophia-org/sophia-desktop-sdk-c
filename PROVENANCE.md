@@ -1,5 +1,15 @@
 # Extraction and contract provenance
 
+## t333 configurable queue comparison
+
+Rust can now represent every C queue size and select zero control headroom for
+a shared pool. The C descriptor control uses two slots: held reservation
+credits block other admission; after commit/handoff, one record is outside the
+queue in separate transaction storage, so another can enter before the queue
+fills. Rust retains the wire-owned record's charge. Full `make check` passes;
+matrix 15 records this storage/accounting difference rather than promising
+identical admission timing. No C production behavior or layout changed.
+
 ## t333 general batch comparison
 
 Rust's general batch API now covers the native, descriptor, indicator and
