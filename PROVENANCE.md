@@ -1,5 +1,13 @@
 # Extraction and contract provenance
 
+## t333 Rust WM protocol foundation
+
+Rust now extracts Sophia's neutral WM codecs as `sophia-wm-protocol`. Its schema,
+API/file docs and golden corpus were compared byte for byte with this SDK's
+pins; no C contract or implementation changed. Rust's 71 extracted tests and
+C's full independent `make check` pass. Matrix 17 retains the full missing Rust
+WM session checklist; codecs alone do not establish client or export parity.
+
 ## t333 local close comparison and shell audit
 
 Rust now exposes explicit local close with retained custody. C's existing
