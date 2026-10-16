@@ -2,6 +2,7 @@
 #include "sophia_launch_auth.h"
 #include "sophia_namespace.h"
 #include "sophia_portal_frame.h"
+#include "sophia_portal_request.h"
 #include "sophia_portal_startup.h"
 #include <assert.h>
 #include <poll.h>
@@ -26,7 +27,8 @@ int main(void) {
   uint64_t deadline = now() + 10000;
   FILE *report;
   const char *mode = getenv("SOPHIA_TEST_PORTAL_BOUNDARY");
-  int frame_mode = !strncmp(mode, "sdk-frame", 9);
+  int request_mode = !strcmp(mode, "sdk-request");
+  int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode;
   int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
   dir = sophia_ns_open(getenv(SOPHIA_NS_DIRECTORY_ENV), names);
@@ -60,6 +62,25 @@ int main(void) {
          opening.info.request == (frame_mode ? SOPHIA_PF_OUTPUT_CAPTURE_V1
                                              : SOPHIA_PF_REQUEST_UNAVAILABLE) &&
          role.fid_count == 1);
+  if (request_mode) {
+    struct sophia_pcr request;
+    struct sophia_pf_capture_request capture = {1, 7};
+    enum sophia_pf_capture_state outcome;
+    uint64_t serial;
+    assert(
+        !sophia_pcr_init(&request, &opening, capture, 0, now(), now() + 3000));
+    while (!sophia_pcr_result(&request, &outcome)) {
+      struct pollfd p = {
+          fd, POLLIN | (sophia_pcr_wants_write(&request) ? POLLOUT : 0), 0};
+      uint64_t t = now(), wake;
+      assert(sophia_pcr_next_wake(&request, &wake));
+      assert(t < deadline && poll(&p, 1, (int)(wake > t ? wake - t : 0)) >= 0);
+      assert(!sophia_pcr_dispatch(&request, now(), 65536));
+    }
+    assert(!sophia_pcr_finish(&request, &outcome, &serial));
+    assert(outcome == SOPHIA_PF_READY && serial == 1 && role.fid_count == 1 &&
+           sophia_po_ready(&opening));
+  }
   if (frame_mode) {
     struct sophia_pfr frame;
     struct sophia_pf_frame_info info;
