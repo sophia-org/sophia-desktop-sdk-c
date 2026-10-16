@@ -431,7 +431,7 @@ static void event_lengths_and_sequences_fail_immediately(void) {
 }
 static void ack_faults_and_revocation_keep_custody(void) {
   unsigned which;
-  for (which = 0; which < 4; ++which) {
+  for (which = 0; which < 5; ++which) {
     struct wm_rig *r = wr_new();
     uint64_t ticket;
     wr_ready(r);
@@ -441,8 +441,10 @@ static void ack_faults_and_revocation_keep_custody(void) {
       r->peer.ack_error = 22;
     else if (which == 3)
       r->peer.submit_silent = 1;
+    else if (which == 4)
+      r->peer.ack_error = 116;
     ticket = wr_submit(r, 1);
-    if (which >= 2) {
+    if (which == 2 || which == 3) {
       steps(r, 30);
       r->peer.event_error = 116;
     }
@@ -451,6 +453,13 @@ static void ack_faults_and_revocation_keep_custody(void) {
            (which == 3 ? SOPHIA_WS_UNKNOWN_DISCONNECTED : SOPHIA_WS_SUBMITTED));
     assert(sophia_ws_state(r->session) ==
            (which >= 2 ? SOPHIA_WS_STALE : SOPHIA_WS_FAILED));
+    assert(sophia_ws_remote_error(r->session) ==
+           (which >= 2 ? 116u : which == 1 ? 22u : 0u));
+    sophia_ws_close(r->session);
+    assert(sophia_ws_state(r->session) ==
+           (which >= 2 ? SOPHIA_WS_STALE : SOPHIA_WS_FAILED));
+    assert(wr_custody(r, ticket) ==
+           (which == 3 ? SOPHIA_WS_UNKNOWN_DISCONNECTED : SOPHIA_WS_SUBMITTED));
     wr_drop(r);
   }
 }
