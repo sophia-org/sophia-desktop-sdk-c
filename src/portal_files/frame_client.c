@@ -291,3 +291,6 @@ void sophia_pfr_close(struct sophia_pfr *s) {
   if (s && !s->error)
     s->error = SOPHIA_PFR_CLOSED;
 }
+uint64_t sophia_pfr_received(const struct sophia_pfr *s) {
+  return s ? s->window.received : 0;
+}

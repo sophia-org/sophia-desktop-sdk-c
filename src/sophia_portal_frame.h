@@ -46,6 +46,8 @@ int sophia_pfr_wants_write(const struct sophia_pfr *);
 int sophia_pfr_result(const struct sophia_pfr *, struct sophia_pf_frame_info *,
                       const void **pixels, size_t *length);
 void sophia_pfr_close(struct sophia_pfr *);
+/* Accepted payload bytes, including incomplete scratch; not image validity. */
+uint64_t sophia_pfr_received(const struct sophia_pfr *);
 /* After success, start another explicit capture read on the same root/wire.
  * Invalid arguments preserve the completed result. No reconnect or api fetch.
  */

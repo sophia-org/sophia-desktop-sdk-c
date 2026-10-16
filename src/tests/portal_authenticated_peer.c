@@ -25,7 +25,9 @@ int main(void) {
   int dir, fd;
   uint64_t deadline = now() + 10000;
   FILE *report;
-  int frame_mode = !strcmp(getenv("SOPHIA_TEST_PORTAL_BOUNDARY"), "sdk-frame");
+  const char *mode = getenv("SOPHIA_TEST_PORTAL_BOUNDARY");
+  int frame_mode = !strncmp(mode, "sdk-frame", 9);
+  int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
   dir = sophia_ns_open(getenv(SOPHIA_NS_DIRECTORY_ENV), names);
   assert(dir >= 0);
@@ -66,25 +68,58 @@ int main(void) {
     unsigned char *image = malloc(256 * 128 * 4);
     assert(image && !sophia_pfr_init(&frame, &opening, image, 256 * 128 * 4,
                                      now(), now() + 3000));
-    while (!sophia_pfr_result(&frame, &info, &result, &length)) {
+    while (!frame.error &&
+           !sophia_pfr_result(&frame, &info, &result, &length)) {
       struct pollfd p = {
           fd, POLLIN | (sophia_pfr_wants_write(&frame) ? POLLOUT : 0), 0};
       uint64_t t = now();
       assert(t < deadline &&
              poll(&p, 1, (int)(frame.deadline > t ? frame.deadline - t : 0)) >=
                  0);
-      assert(!sophia_pfr_dispatch(&frame, now(), 65536));
+      int dispatch =
+          sophia_pfr_dispatch(&frame, now(), revoke && !paused ? 1 : 65536);
+      if (!revoke)
+        assert(!dispatch);
+      if (revoke && !paused && sophia_pfr_received(&frame)) {
+        assert(sophia_pfr_received(&frame) < 256 * 128 * 4 &&
+               !sophia_pfr_result(&frame, &info, &result, &length));
+        report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
+        assert(report && fputs("partial\n", report) >= 0 && !fclose(report));
+        for (;;) {
+          char text[32] = {0};
+          struct timespec delay = {0, 1000000};
+          report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "r");
+          assert(report);
+          (void)fgets(text, sizeof text, report);
+          assert(!fclose(report));
+          if (!strcmp(text, "continue\n"))
+            break;
+          assert(now() < deadline);
+          nanosleep(&delay, NULL);
+        }
+        paused = 1;
+      }
     }
-    assert(result == image && length == 256 * 128 * 4 && info.output == 7 &&
-           info.output_generation == 9 && info.presentation_generation == 11 &&
-           info.width == 256 && info.height == 128 && role.fid_count == 1);
-    for (i = 0; i < length; ++i)
-      assert(image[i] == 17);
+    if (revoke) {
+      assert(paused && frame.error && frame.error != SOPHIA_PFR_DEADLINE &&
+             !sophia_pfr_result(&frame, &info, &result, &length));
+    } else {
+      assert(result == image && length == 256 * 128 * 4 && info.output == 7 &&
+             info.output_generation == 9 &&
+             info.presentation_generation == 11 && info.width == 256 &&
+             info.height == 128 && role.fid_count == 1);
+      for (i = 0; i < length; ++i)
+        assert(image[i] == 17);
+    }
     sophia_pfr_close(&frame);
     free(image);
   }
   report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
-  assert(report && fputs(frame_mode ? "frame\n" : "started\n", report) >= 0 &&
+  assert(report &&
+         fputs(revoke       ? "revoked\n"
+               : frame_mode ? "frame\n"
+                            : "started\n",
+               report) >= 0 &&
          !fclose(report));
   sophia_po_close(&opening);
   close(fd);
