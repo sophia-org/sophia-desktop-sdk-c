@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
   assert(argc == 4 && s && storage && fd >= 0);
   start = clock_ms();
   assert(!strcmp(argv[3], "settle") || !strcmp(argv[3], "revoke") ||
-         !strcmp(argv[3], "loss"));
+         !strcmp(argv[3], "loss") || !strcmp(argv[3], "recover"));
   revoke = strcmp(argv[3], "settle") != 0;
   assert(strlen(argv[1]) < sizeof address.sun_path);
   address.sun_family = AF_UNIX;
@@ -81,6 +81,63 @@ int main(int argc, char **argv) {
       turn(s);
     assert(sophia_ad_latest(s)->custody == SOPHIA_AC_UNKNOWN);
     assert(sophia_ad_invoke(s, &command, now(), &request));
+    if (!strcmp(argv[3], "recover")) {
+      struct sophia_9p_client new_wire;
+      struct sophia_ad_connecting c;
+      struct sophia_ad *fresh = malloc(sizeof *fresh);
+      struct sophia_af_command probe = {SOPHIA_AF_POLICY, "probe", 5};
+      void *new_storage = malloc(size);
+      char path[256];
+      int new_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+      uint64_t begun;
+      assert(fresh && new_storage && new_fd >= 0);
+      report(argv[2], "lost\n");
+      for (;;) {
+        char text[280] = {0};
+        FILE *f = fopen(argv[2], "r");
+        struct timespec pause = {0, 1000000};
+        size_t n;
+        assert(f);
+        (void)fgets(text, sizeof text, f);
+        assert(!fclose(f));
+        n = strlen(text);
+        if (n > 9 && !strncmp(text, "recover ", 8) && text[n - 1] == '\n') {
+          assert(n - 9 < sizeof path);
+          memcpy(path, text + 8, n - 9);
+          path[n - 9] = 0;
+          break;
+        }
+        (void)now();
+        nanosleep(&pause, NULL);
+      }
+      memset(&address, 0, sizeof address);
+      address.sun_family = AF_UNIX;
+      assert(strlen(path) < sizeof address.sun_path);
+      strcpy(address.sun_path, path);
+      assert(!connect(new_fd, (struct sockaddr *)&address, sizeof address));
+      assert(
+          !sophia_9p_init(&new_wire, new_fd, 65536, 2, 4, new_storage, size));
+      begun = now();
+      assert(
+          !sophia_ad_connect_init(&c, &new_wire, fresh, begun, begun + 2000));
+      while (!sophia_ad_connect_ready(&c)) {
+        wake = 10000;
+        (void)sophia_ad_connect_next_wake(&c, &wake);
+        wait_io(new_fd, sophia_ad_connect_wants_write(&c), wake);
+        assert(!sophia_ad_connect_dispatch(&c, now(), 65536));
+      }
+      assert(sophia_ad_connect_take_session(&c) == fresh);
+      assert(fresh->info.session_low != s->info.session_low ||
+             fresh->info.session_high != s->info.session_high);
+      assert(sophia_ad_catalog(fresh)->generation == 9);
+      assert(!sophia_ad_invoke(fresh, &probe, now(), &request) && request == 1);
+      outcome(fresh, 1, SOPHIA_AF_REJECTED);
+      assert(sophia_ad_latest(s)->custody == SOPHIA_AC_UNKNOWN);
+      sophia_ad_close(fresh);
+      close(new_fd);
+      free(new_storage);
+      free(fresh);
+    }
   } else {
     outcome(s, 1, SOPHIA_AF_COMMITTED);
     report(argv[2], "first\n");
