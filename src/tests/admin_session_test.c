@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "sophia_admin_session.h"
+#include "sophia_admin_connecting.h"
 #include <assert.h>
 #include <errno.h>
 #include <sched.h>
@@ -180,9 +180,7 @@ int main(void) {
     pid_t child;
     uint64_t start = now_ms(), request, wake;
     struct sophia_9p_client wire;
-    struct sophia_9p_handle version;
-    struct sophia_9p_reply reply;
-    struct sophia_ao opening;
+    struct sophia_ad_connecting connecting;
     struct sophia_ad *s = malloc(sizeof *s);
     struct sophia_af_command command = {SOPHIA_AF_POLICY, "next tab", 8};
     size_t size = sophia_9p_storage_bytes(4096, 2);
@@ -197,21 +195,15 @@ int main(void) {
     }
     close(pair[1]);
     assert(!sophia_9p_init(&wire, pair[0], 4096, 2, 4, storage, size));
-    assert(!sophia_9p_version(&wire, &version));
-    do {
+    assert(!sophia_ad_connect_init(&connecting, &wire, s, 0, 2000));
+    while (!sophia_ad_connect_ready(&connecting)) {
       assert(now_ms() - start < 2000);
-      assert(sophia_9p_service(&wire, 512) >= 0);
-      sched_yield();
-    } while (sophia_9p_peek(&wire, &reply) == SOPHIA_9P_AGAIN);
-    assert(!sophia_9p_consume(&wire, reply.handle));
-    assert(!sophia_ao_init(&opening, &wire, 0, 2000));
-    while (!sophia_ao_ready(&opening)) {
-      assert(now_ms() - start < 2000);
-      assert(!sophia_ao_dispatch(&opening, now_ms() - start, 512));
+      assert(!sophia_ad_connect_dispatch(&connecting, now_ms() - start, 512));
       sched_yield();
     }
-    assert(!sophia_ad_init(s, &opening));
-    assert(!sophia_ao_ready(&opening));
+    assert(!sophia_ad_connect_next_wake(&connecting, &wake));
+    assert(sophia_ad_connect_take_session(&connecting) == s);
+    assert(!sophia_ad_connect_take_session(&connecting));
     while (!sophia_ad_catalog(s)) {
       assert(now_ms() - start < 2000);
       assert(!sophia_ad_dispatch(s, now_ms() - start, 512));
