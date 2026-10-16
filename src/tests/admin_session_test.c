@@ -117,9 +117,12 @@ static void peer(int fd, unsigned fault) {
         if (polls == 1)
           (void)snprintf(objects[fid], 512, "v1 pending 7 %u 12\n", writes);
         else
-          (void)snprintf(objects[fid], 512, "v1 outcome 7 %u %u %s 2:ok\n",
+          (void)snprintf(objects[fid], 512, "v1 outcome 7 %u %u %s %u:ok\n",
                          writes, fault == 3 ? 13 : 12,
-                         writes == 2 ? "unchanged" : "committed");
+                         fault == 6    ? "completed"
+                         : writes == 2 ? "unchanged"
+                                       : "committed",
+                         fault == 5 ? 3 : 2);
         break;
       default:
         assert(0);
@@ -156,6 +159,9 @@ static void peer(int fd, unsigned fault) {
         close(fd);
         assert(writes == 1 && catalogs == 1);
         _exit(0);
+      } else if (fault == 4) {
+        put(r, get(b + 12, 4) - 1, 4);
+        send_reply(fd, 119, tag, r, 4);
       } else
         send_reply(fd, 119, tag, b + 12, 4);
       break;
@@ -175,7 +181,7 @@ static void peer(int fd, unsigned fault) {
 int main(void) {
   unsigned fault;
   alarm(15);
-  for (fault = 0; fault <= 3; ++fault) {
+  for (fault = 0; fault <= 6; ++fault) {
     int pair[2], exit_status;
     pid_t child;
     uint64_t start = now_ms(), request, wake;
@@ -206,7 +212,7 @@ int main(void) {
     assert(!sophia_ad_connect_take_session(&connecting));
     while (!sophia_ad_catalog(s)) {
       assert(now_ms() - start < 2000);
-      assert(!sophia_ad_dispatch(s, now_ms() - start, 512));
+      assert(!sophia_ad_dispatch(s, now_ms() - start, 1));
       sched_yield();
     }
     assert(sophia_ad_catalog(s)->count == 2 && !sophia_ad_next_wake(s, &wake));
@@ -220,7 +226,7 @@ int main(void) {
         assert(!sophia_ad_refresh_catalog(s, now_ms() - start));
         while (!sophia_ad_catalog(s)) {
           assert(now_ms() - start < 2000);
-          assert(!sophia_ad_dispatch(s, now_ms() - start, 512));
+          assert(!sophia_ad_dispatch(s, now_ms() - start, 1));
           sched_yield();
         }
       }
@@ -233,7 +239,7 @@ int main(void) {
              SOPHIA_AD_BUSY);
       while (!s->error && sophia_ad_latest(s)->custody != SOPHIA_AC_SETTLED) {
         assert(now_ms() - start < 2000);
-        (void)sophia_ad_dispatch(s, now_ms() - start, 512);
+        (void)sophia_ad_dispatch(s, now_ms() - start, 1);
         sched_yield();
       }
       if (fault) {
