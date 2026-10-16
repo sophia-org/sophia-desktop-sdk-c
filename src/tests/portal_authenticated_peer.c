@@ -5,6 +5,7 @@
 #include "sophia_portal_request.h"
 #include "sophia_portal_startup.h"
 #include "sophia_portal_transfer.h"
+#include "sophia_portal_watch.h"
 #include <assert.h>
 #include <poll.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@ int main(void) {
   uint32_t refusal_errno = busy ? 11 : stale ? 116 : 13;
   int cancelled = !strncmp(mode, "sdk-request-cancelled", 21);
   int transfer_mode = !strncmp(mode, "sdk-transfer", 12);
+  int watch_mode = !strncmp(mode, "sdk-watch", 9);
   int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode;
   int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
@@ -160,6 +162,62 @@ int main(void) {
     free(storage);
     goto report_result;
   }
+  if (watch_mode) {
+    struct sophia_pw watch;
+    int absent = !strcmp(mode, "sdk-watch-absent");
+    int cancel = !strcmp(mode, "sdk-watch-cancel");
+    int expire = !strcmp(mode, "sdk-watch-expire"), announced = 0;
+    assert(!sophia_pw_init(&watch, &opening, now(), now() + 3000));
+    while (!watch.error && !sophia_pw_revoked(&watch)) {
+      struct pollfd p = {
+          fd, POLLIN | (sophia_pw_wants_write(&watch) ? POLLOUT : 0), 0};
+      uint64_t t = now();
+      int dispatch;
+      assert(t < deadline &&
+             poll(&p, 1, (int)(watch.deadline > t ? watch.deadline - t : 0)) >=
+                 0);
+      dispatch = sophia_pw_dispatch(&watch, now(), 65536);
+      if (!absent)
+        assert(!dispatch);
+      if (!announced && sophia_pw_waiting(&watch) &&
+          !sophia_pw_wants_write(&watch)) {
+        assert(!sophia_pw_revoked(&watch));
+        report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
+        assert(report && fputs("watch-ready\n", report) >= 0 &&
+               !fclose(report));
+        for (;;) {
+          char text[32] = {0};
+          struct timespec delay = {0, 1000000};
+          report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "r");
+          assert(report);
+          (void)fgets(text, sizeof text, report);
+          assert(!fclose(report));
+          if (!strcmp(text, "continue\n"))
+            break;
+          assert(now() < deadline);
+          nanosleep(&delay, NULL);
+        }
+        announced = 1;
+        if (cancel)
+          sophia_pw_close(&watch);
+        if (expire)
+          assert(sophia_pw_dispatch(&watch, watch.deadline, 65536) ==
+                 SOPHIA_PS_DEADLINE);
+      }
+    }
+    if (absent || cancel || expire) {
+      assert(watch.error == (absent   ? SOPHIA_PS_REMOTE
+                             : cancel ? SOPHIA_PS_CLOSED
+                                      : SOPHIA_PS_DEADLINE));
+      assert(!sophia_pw_revoked(&watch) &&
+             (!absent || watch.remote_error == 2));
+    } else {
+      assert(announced && sophia_pw_revoked(&watch));
+      assert(!sophia_pw_finish(&watch) && sophia_po_ready(&opening) &&
+             role.fid_count == 1);
+    }
+    goto report_result;
+  }
   if (frame_mode) {
     struct sophia_pfr frame;
     struct sophia_pf_frame_info info;
@@ -217,12 +275,13 @@ int main(void) {
 report_result:
   report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
   assert(report &&
-         fputs(transfer_mode ? "transfer-done\n"
-               : refused     ? "request-refused\n"
-               : cancelled   ? "request-cancelled\n"
-               : revoke      ? "revoked\n"
-               : frame_mode  ? "frame\n"
-                             : "started\n",
+         fputs(watch_mode      ? "watch-done\n"
+               : transfer_mode ? "transfer-done\n"
+               : refused       ? "request-refused\n"
+               : cancelled     ? "request-cancelled\n"
+               : revoke        ? "revoked\n"
+               : frame_mode    ? "frame\n"
+                               : "started\n",
                report) >= 0 &&
          !fclose(report));
   sophia_po_close(&opening);
