@@ -52,11 +52,13 @@ continues to describe implemented support until the relevant gates pass.
 ## Parity gate
 
 [API-PARITY.md](API-PARITY.md) maps the shell event-loop operations to the
-native Rust SDK, with tests and remaining differences. Rust `6fda07e` adds
-borrowed-descriptor and readiness access; C already provides these operations.
-The C `make check` suite passes at `65ea947`. That comparison does not establish
-complete SDK parity: clock control, work budgets and missing role clients
-remain explicit under Sophia t333.
+native Rust SDK, with tests and remaining differences. Rust `1f33550` supplies
+borrowed-descriptor/readiness access, caller time, whole-call byte/syscall
+budgets and the same 4–256 ms backoff as C. C already provides these controls;
+its library implementation is unchanged. `make check` passes, including the
+new `service_byte_budget_bounds_partial_requests` control and existing clock
+and retry tests. Full shell operation coverage, missing role clients and the
+documented clock-representation differences remain explicit under Sophia t333.
 
 Descriptor support covers all seventeen native envelopes:
 three whole objects, eight events, two activation acknowledgements and four
