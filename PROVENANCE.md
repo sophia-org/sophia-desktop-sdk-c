@@ -1,5 +1,16 @@
 # Extraction and contract provenance
 
+## t333 cancellation after a refused End
+
+`sophia_ns_resource_cancel` cancels a tracked Begun or Admitted resource by
+identity, including after End has closed the local upload window. It preserves
+the identity until the server's terminal event. Current uploads use the existing
+transport cancellation wrapper. This adds a function without changing layouts.
+The independent C control covers refused End, busy admission, a stale generation,
+identity retention, current-upload cancellation and rejection of Accepted
+resources. Full `make check` passes; Rust's paired native suite passes 26 tests.
+Production-export qualification remains pending.
+
 ## t333 permit expiry before candidate refusal
 
 `test_expiry_before_submit_refusal` failed on `c678319`: after a locally admitted

@@ -893,8 +893,52 @@ static void test_expiry_before_submit_refusal(void)
     assert(!sophia_ns_present(&n, &s, 1250, &t));
 }
 
+static void test_cancel_resource_after_refused_end(void)
+{
+    struct sophia_ns n;
+    struct sophia_sf_resource_begin begin;
+    const struct sophia_sf_record *record;
+    uint64_t t, next;
+    reset();
+    assert(!sophia_ns_init(&n, &SS, &CONFIG));
+    memset(&begin, 0, sizeof(begin));
+    begin.resource_id = RES;
+    begin.resource_generation = RES_GEN;
+    assert(!sophia_ns_upload_begin(&n, begin, &t));
+    resource_status(1);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(!sophia_ns_upload_end(&n, &t));
+    F.outcomes[t] = SOPHIA_SS_REFUSED;
+    assert(!sophia_ns_service(&n, 1000));
+    assert(sophia_ns_upload_cancel(&n, &t) == SOPHIA_9P_INVALID);
+    next = n.next_transaction;
+    F.submit_busy = 1;
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_BUSY);
+    assert(n.next_transaction == next);
+    F.submit_busy = 0;
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN + 1, &t) == SOPHIA_9P_INVALID);
+    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
+    record = last(SOPHIA_SF_RESOURCE_CANCEL);
+    assert(record && record->value.resource_cancel.resource_id == RES);
+    assert(record->value.resource_cancel.resource_generation == RES_GEN);
+    assert(record->value.resource_cancel.transaction == next);
+    /* Local admission does not free the identity. */
+    assert(sophia_ns_upload_begin(&n, begin, &t) == SOPHIA_9P_INVALID);
+    resource_status(4);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(!sophia_ns_upload_begin(&n, begin, &t));
+    assert(!sophia_ns_resource_cancel(&n, RES, RES_GEN, &t));
+    assert(!n.uploading);
+    resource_status(4);
+    finish(&n, SOPHIA_NS_EV_RESOURCE);
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
+    ready(&n);
+    assert(sophia_ns_resource_cancel(&n, RES, RES_GEN, &t) == SOPHIA_9P_INVALID);
+}
+
 int main(void)
 {
+    test_cancel_resource_after_refused_end();
     test_expiry_before_submit_refusal();
     test_init();
     test_catalog_invalidation();
