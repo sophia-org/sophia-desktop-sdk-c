@@ -643,6 +643,23 @@ static void superseded_announcement(void) {
   rig_free(r);
 }
 
+static void rejects_invalid_lock_fetch(void) {
+  unsigned fault;
+  for (fault = 0; fault < 4; ++fault) {
+    struct rig *r = ready();
+    publish(&r->peer, SOPHIA_LF_LOCKED, 5, 1);
+    switch (fault) {
+    case 0: r->peer.lock[8] = EPOCH + 1; break;
+    case 1: r->peer.lock[r->peer.lock_size++] = 0; break;
+    case 2: r->peer.lock_size = 0; break;
+    default: --r->peer.qid; break;
+    }
+    assert(spin(r) == SOPHIA_9P_INVALID);
+    assert(sophia_lc_state(&r->client) == SOPHIA_LC_FAILED);
+    rig_free(r);
+  }
+}
+
 static void entry_and_chord(void) {
   struct rig *r = ready();
   struct sophia_lf_record v;
@@ -982,6 +999,7 @@ int main(void) {
   an_admitted_root_is_not_reset_or_attached_again();
   bootstrap_and_lock();
   superseded_announcement();
+  rejects_invalid_lock_fetch();
   entry_and_chord();
   upload_and_present();
   upload_pipeline_tests();
