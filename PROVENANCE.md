@@ -1,5 +1,14 @@
 # Extraction and contract provenance
 
+## t333 presentation and edit convenience comparison
+
+Rust now provides borrowed presentation metadata and reserve-before-edit
+convenience matching `sophia_ns_presented` and `sophia_ns_input_apply`. A new
+independent C test verifies a callback returning false is invoked once and
+produces a Stale ACK. Full `make check` passes. Matrix 13 records Rust's
+pre-encoded disposition selection and fail-closed panic behavior; C callbacks
+must return normally. No C layout or production behavior changed here.
+
 ## t333 owning Rust facade comparison
 
 Rust now owns and services a native connection through `NativeLauncherSession`.

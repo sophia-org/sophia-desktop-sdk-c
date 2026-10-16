@@ -630,6 +630,26 @@ static void test_focus(void)
     assert(e.held && !sophia_ns_done(&n) && sophia_ns_focus(&n)->focus_lease == 5);
 }
 static unsigned edits;
+static int decline_edit(void *user, const struct sophia_sf_native_input *v)
+{
+    (void)user;
+    (void)v;
+    edits++;
+    return 0;
+}
+static void test_declined_edit_is_acknowledged_stale(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_event e;
+    const struct sophia_sf_record *c = shown(&n);
+    uint64_t t;
+    input(binding(c->value.role_candidate.content.candidate_generation, 1, 1), 10, 2, 1, "ab");
+    (void)next(&n, &e, SOPHIA_NS_EV_INPUT);
+    edits = 0;
+    assert(!sophia_ns_input_apply(&n, 0, decline_edit, NULL, &t));
+    assert(edits == 1 && F.head == F.pushed);
+    assert(last(SOPHIA_SF_NATIVE_INPUT_ACK)->value.native_input_ack.disposition == 2);
+}
 static int edit(void *user, const struct sophia_sf_native_input *v)
 {
     (void)user;
@@ -974,6 +994,7 @@ static void test_cancel_resource_after_refused_end(void)
 
 int main(void)
 {
+    test_declined_edit_is_acknowledged_stale();
     test_action_nonselected_row();
     test_cancel_resource_after_refused_end();
     test_expiry_before_submit_refusal();
