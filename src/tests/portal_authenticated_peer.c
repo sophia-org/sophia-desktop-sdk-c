@@ -3,6 +3,7 @@
 #include "sophia_namespace.h"
 #include "sophia_portal_frame.h"
 #include "sophia_portal_request.h"
+#include "sophia_portal_session.h"
 #include "sophia_portal_startup.h"
 #include "sophia_portal_transfer.h"
 #include "sophia_portal_watch.h"
@@ -37,6 +38,7 @@ int main(void) {
   int cancelled = !strncmp(mode, "sdk-request-cancelled", 21);
   int transfer_mode = !strncmp(mode, "sdk-transfer", 12);
   int watch_mode = !strncmp(mode, "sdk-watch", 9);
+  int session_mode = !strncmp(mode, "sdk-session", 11);
   int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode;
   int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
@@ -162,6 +164,73 @@ int main(void) {
     free(storage);
     goto report_result;
   }
+  if (session_mode) {
+    struct sophia_pcs session;
+    unsigned char status_bytes[43], *storage = malloc(65536);
+    const void *result;
+    size_t length, i;
+    enum sophia_pcs_event event;
+    uint32_t remote;
+    int phase = 0, cancel = !strcmp(mode, "sdk-session-cancel");
+    uint64_t expires = now() + 3000;
+    assert(storage);
+    memset(storage, 0xa5, 65536);
+    assert(!sophia_pcs_init(&session, &opening));
+    assert(!sophia_pcs_watch(&session, expires));
+    assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_STATUS, status_bytes,
+                                sizeof status_bytes, expires));
+    for (;;) {
+      struct pollfd p = {
+          fd, POLLIN | (sophia_pcs_wants_write(&session) ? POLLOUT : 0), 0};
+      uint64_t t = now(), wake;
+      assert(sophia_pcs_deadline(&session, &wake));
+      assert(t < deadline && poll(&p, 1,
+                                  sophia_pcs_immediate(&session)
+                                      ? 0
+                                      : (int)(wake > t ? wake - t : 0)) >= 0);
+      assert(!sophia_pcs_dispatch(&session, now(), 65536));
+      if (!phase && sophia_pcs_snapshot_result(&session, &result, &length)) {
+        const char *expected = "request=unavailable transfer=ready\n";
+        assert(length == strlen(expected) && !memcmp(result, expected, length));
+        assert(sophia_pcs_watch_waiting(&session) &&
+               !sophia_pcs_watch_event(&session, &event, &remote));
+        assert(!sophia_pcs_release_snapshot(&session));
+        report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
+        assert(report && fputs("session-ready\n", report) >= 0 &&
+               !fclose(report));
+        for (;;) {
+          char text[32] = {0};
+          struct timespec delay = {0, 1000000};
+          report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "r");
+          assert(report);
+          (void)fgets(text, sizeof text, report);
+          assert(!fclose(report));
+          if (!strcmp(text, "continue\n"))
+            break;
+          assert(now() < deadline);
+          nanosleep(&delay, NULL);
+        }
+        assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_TRANSFER, storage,
+                                    65536, expires));
+        if (cancel)
+          assert(!sophia_pcs_cancel_watch(&session));
+        phase = 1;
+      }
+      if (phase && sophia_pcs_watch_event(&session, &event, &remote) &&
+          sophia_pcs_snapshot_result(&session, &result, &length))
+        break;
+    }
+    assert(event == (cancel ? SOPHIA_PCS_CANCELLED : SOPHIA_PCS_REVOKED));
+    assert(result == storage && length == 7 && !memcmp(result, "granted", 7));
+    for (i = length; i < 65536; ++i)
+      assert(storage[i] == 0xa5);
+    assert(!sophia_pcs_release_watch(&session) &&
+           !sophia_pcs_release_snapshot(&session));
+    assert(!sophia_pcs_finish(&session) && sophia_po_ready(&opening) &&
+           role.fid_count == 1);
+    free(storage);
+    goto report_result;
+  }
   if (watch_mode) {
     struct sophia_pw watch;
     int absent = !strcmp(mode, "sdk-watch-absent");
@@ -275,7 +344,8 @@ int main(void) {
 report_result:
   report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
   assert(report &&
-         fputs(watch_mode      ? "watch-done\n"
+         fputs(session_mode    ? "session-done\n"
+               : watch_mode    ? "watch-done\n"
                : transfer_mode ? "transfer-done\n"
                : refused       ? "request-refused\n"
                : cancelled     ? "request-cancelled\n"
