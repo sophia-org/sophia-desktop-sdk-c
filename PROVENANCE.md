@@ -1,5 +1,15 @@
 # Extraction and contract provenance
 
+## t333 native pointer response comparison
+
+The Rust lifecycle now matches C's retained Action and atomic activation/ACK
+response. A new C control proves a displayed nonselected row can activate;
+existing tests cover busy admission, cancellation and one activation at a time.
+Full `make check` passes. Rust separately checks exact wire records, stale
+actions, preparation cancellation, queue saturation and split custody outcomes.
+Matrix revision 11 records the prepared-handle API difference and remaining
+facade work. No C production behavior or layout changed in this slice.
+
 ## t333 cancellation after a refused End
 
 `sophia_ns_resource_cancel` cancels a tracked Begun or Admitted resource by

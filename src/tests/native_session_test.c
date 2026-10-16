@@ -763,6 +763,33 @@ static void action(uint64_t generation, uint64_t event, uint16_t kind)
 }
 /* Action acknowledgement is explicit, BUSY-safe and consumes the event; a
  * pointer activation is sent only on request, before the ack, atomically. */
+static void test_action_nonselected_row(void)
+{
+    struct sophia_ns n;
+    struct sophia_ns_scene s = scene();
+    struct sophia_ns_event e;
+    const struct sophia_sf_record *c;
+    uint64_t t, g;
+    ready(&n);
+    s.row_count = 2;
+    s.rows[1] = 6;
+    s.selected = 6;
+    s.targets[1] = s.targets[0];
+    s.targets[1].target_id++;
+    assert(!sophia_ns_present(&n, &s, 1050, &t));
+    c = last(SOPHIA_SF_NATIVE_CANDIDATE);
+    g = c->value.role_candidate.content.candidate_generation;
+    outcome(c, 2);
+    finish(&n, SOPHIA_NS_EV_CANDIDATE);
+    focus(binding(g, 1, 1));
+    finish(&n, SOPHIA_NS_EV_FOCUS);
+    action(g, 31, 1); /* row 5 is displayed, but row 6 is selected */
+    (void)next(&n, &e, SOPHIA_NS_EV_ACTION);
+    assert(e.can_activate);
+    assert(!sophia_ns_action_ack(&n, 1, 1, &t));
+    assert(last(SOPHIA_SF_NATIVE_ACTIVATE)->value.native_activate.slot == 5);
+}
+
 static void test_action(void)
 {
     struct sophia_ns n;
@@ -938,6 +965,7 @@ static void test_cancel_resource_after_refused_end(void)
 
 int main(void)
 {
+    test_action_nonselected_row();
     test_cancel_resource_after_refused_end();
     test_expiry_before_submit_refusal();
     test_init();
