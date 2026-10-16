@@ -34,6 +34,8 @@ int main(void) {
   size_t bytes = sophia_9p_storage_bytes(4096, 8);
   void *role_storage = malloc(bytes), *relay_storage = malloc(bytes);
   int fd = socket(AF_UNIX, SOCK_STREAM, 0), observed = 0;
+  int upload = getenv("SOPHIA_TEST_LOCK_UPLOAD") && !strcmp(getenv("SOPHIA_TEST_LOCK_UPLOAD"), "1");
+  uint8_t pixels[16];
   uint64_t deadline = now_ms() + 10000;
   assert(fd >= 0 && role_storage && relay_storage);
   assert(socket_path && report_path && strlen(socket_path) < sizeof address.sun_path);
@@ -74,7 +76,53 @@ int main(void) {
   } while (!observed || obligations.acked < 3);
   assert(sophia_lc_epoch(&client) == 7);
   assert(sophia_lc_welcome(&client)->granted_capabilities == SOPHIA_LF_CAP_PRESENT);
-  report(report_path, "waiting\n");
+  if (upload) {
+    struct sophia_lf_resource_begin begin = {0};
+    int status;
+    begin.transaction = 2;
+    begin.resource.id = begin.resource.generation = 1;
+    begin.width_px = begin.height_px = 2;
+    do {
+      assert(now_ms() < deadline);
+      status = sophia_lc_upload_begin(&client, &begin);
+      if (status == SOPHIA_9P_BUSY) assert(!sophia_lc_service(&client, 65536));
+    } while (status == SOPHIA_9P_BUSY);
+    assert(!status);
+    observed = 0;
+    while (!observed || !sophia_lc_upload_ready(&client)) {
+      const struct sophia_lf_record *event;
+      struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
+      assert(now_ms() < deadline && poll(&pfd, 1, 1) >= 0);
+      assert(!sophia_lc_service(&client, 65536));
+      if (!sophia_lc_event(&client, &event)) {
+        assert(event->header.kind == SOPHIA_LF_RESOURCE_STATUS && event->value.resource_status.status == SOPHIA_LF_ADMITTED);
+        observed = 1;
+        assert(!sophia_lc_event_consume(&client));
+      }
+    }
+    memset(pixels, 0x5a, sizeof pixels);
+    assert(!sophia_lc_upload_chunk(&client, pixels, 4));
+    while (!sophia_lc_upload_ready(&client)) {
+      struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
+      assert(now_ms() < deadline && poll(&pfd, 1, 1) >= 0);
+      assert(!sophia_lc_service(&client, 65536));
+    }
+    assert(!sophia_lc_upload_chunk(&client, pixels + 4, 12));
+    assert(!sophia_lc_service(&client, 0));
+    assert(!sophia_lc_obligations(&client, &obligations));
+    assert(obligations.upload_pending && obligations.upload_writes == 1);
+    report(report_path, "upload-waiting\n");
+    for (;;) {
+      char text[32] = {0};
+      FILE *f = fopen(report_path, "r");
+      struct timespec pause = {0, 1000000};
+      assert(f && now_ms() < deadline);
+      (void)fgets(text, sizeof text, f);
+      assert(!fclose(f));
+      if (!strcmp(text, "continue\n")) break;
+      nanosleep(&pause, NULL);
+    }
+  } else report(report_path, "waiting\n");
   for (;;) {
     struct pollfd pfd = {fd, POLLIN | (sophia_9p_wants_write(&role) ? POLLOUT : 0), 0};
     assert(now_ms() < deadline);
@@ -86,9 +134,14 @@ int main(void) {
     uint64_t id;
     enum sophia_lc_submission custody;
     assert(!sophia_lc_submission(&client, &id, &custody, NULL));
-    assert(id == 1 && custody == SOPHIA_LC_SUBMISSION_CUSTODIED);
+    assert(id == (upload ? 2u : 1u) && custody == SOPHIA_LC_SUBMISSION_CUSTODIED);
   }
-  report(report_path, "revoked\n");
+  if (upload) {
+    assert(!sophia_lc_upload_pending(&client) && !sophia_lc_upload_ready(&client));
+    assert(!sophia_lc_obligations(&client, &obligations) && !obligations.upload_writes);
+    assert(sophia_lc_upload_end(&client) && sophia_lc_upload_cancel(&client));
+  }
+  report(report_path, upload ? "upload-revoked\n" : "revoked\n");
   close(fd); close(STDIN_FILENO); free(role_storage); free(relay_storage);
   return 0;
 }
