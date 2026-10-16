@@ -57,6 +57,9 @@ check-files: $(addprefix $(BUILD)/,$(FILE_TESTS))
 	@set -e; for test in $^; do "$$test"; done
 
 # Explicit conformance peer: run only under Sophia's protected launch fixture.
+$(BUILD)/portal_authenticated_peer: src/tests/portal_authenticated_peer.c $(LIBRARIES)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
+
 $(BUILD)/admin_conformance_peer: src/tests/admin_conformance_peer.c $(LIBRARIES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
 
