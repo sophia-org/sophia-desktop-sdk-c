@@ -1,5 +1,20 @@
 # Extraction and contract provenance
 
+## t333 reservation identity correction
+
+Two live C sessions could issue the same reservation serial and accept each
+other's token. `reservation_is_bound_to_its_session` reproduced the incorrect
+cross-session cancellation on `cfa6561`. Reserve now records the owner address
+and connection epoch; cancel and commit validate both before changing state.
+The regression and full `make check` suite pass. No wire contract changed.
+
+The public `sophia_ss_reservation` layout changed. Version 0.10.0-dev is marked
+unreleased; consumers and foreign-language bindings must rebuild together with
+the SDK. The session must not move or be reinitialized with a live reservation.
+Rust `a2c0e74` supplies matching delayed-content capacity control with private
+connection-bound identities. Matrix revision 4 records remaining differences.
+Sophia production adoption and export gates remain pending.
+
 ## t317 final contract reconciliation
 
 The launch-authentication and shell-descriptor contract snapshots are copied

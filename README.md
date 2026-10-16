@@ -5,6 +5,14 @@ without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
 ## SDK scope
 
+The current development candidate is **0.10.0-dev, unreleased**. Reservation
+tokens now identify the issuing session address and epoch as well as their
+serial. Previously two live sessions with matching serials could accept each
+other's tokens. The public `sophia_ss_reservation` layout has grown: recompile
+C consumers and foreign-language bindings before adoption. Do not mix old
+headers with this library or move/reinitialize a session with a live reservation.
+The wire contract is unchanged. [API parity](API-PARITY.md) maps the Rust controls.
+
 One desktop SDK per language covers Sophia's WM, shell, output and admin/control
 roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
 rules; they are not separate SDK repositories. Nim uses this SDK through thin C

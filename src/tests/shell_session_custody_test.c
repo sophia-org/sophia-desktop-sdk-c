@@ -389,10 +389,32 @@ static void stale_events(void)
     assert(rig_outcome(&r, first) == SOPHIA_SS_UNKNOWN_DISCONNECTED);
     rig_close(&r);
 }
+static void reservation_is_bound_to_its_session(void)
+{
+    struct rig a, b;
+    struct sophia_ss_reservation va, vb;
+    struct sophia_sf_record record = rig_request(1);
+    uint64_t first = 99;
+    size_t bytes = sophia_ss_record_bytes(&record);
+    rig_ready(&a, &rig_config);
+    rig_ready(&b, &rig_config);
+    assert(!sophia_ss_reserve(&a.s, 1, bytes, &va));
+    assert(!sophia_ss_reserve(&b.s, 1, bytes, &vb));
+    assert(va.serial == vb.serial);
+    assert(sophia_ss_cancel(&b.s, &va) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_commit(&b.s, &va, &record, 1, &first) == SOPHIA_9P_ARGUMENT);
+    assert(first == 99 && a.s.reserved && b.s.reserved);
+    assert(!sophia_ss_commit(&a.s, &va, &record, 1, &first) && first == 1);
+    assert(!sophia_ss_cancel(&b.s, &vb));
+    rig_close(&a);
+    rig_close(&b);
+}
+
 int main(void)
 {
     admission_atomicity();
     reservation();
+    reservation_is_bound_to_its_session();
     unknown_after_issued_submit();
     dropped_when_only_staged();
     definitive_refusal();
