@@ -51,6 +51,13 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
+[API-PARITY.md](API-PARITY.md) maps the shell event-loop operations to the
+native Rust SDK, with tests and remaining differences. Rust `6fda07e` adds
+borrowed-descriptor and readiness access; C already provides these operations.
+The C `make check` suite passes at `65ea947`. That comparison does not establish
+complete SDK parity: clock control, work budgets and missing role clients
+remain explicit under Sophia t333.
+
 Descriptor support covers all seventeen native envelopes:
 three whole objects, eight events, two activation acknowledgements and four
 presentation candidates in `spec/sophia-shell-files-v1.kdl`. It validates envelopes, identities,
