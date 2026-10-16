@@ -83,6 +83,11 @@ static void reservation(void)
     r.p.policy = P_HOLD;
     group[0] = group[1] = group[2] = rig_request(9);
     bytes = sophia_ss_record_bytes(&group[0]);
+    /* Cancellation restores capacity without consuming a ticket or sending. */
+    assert(!sophia_ss_reserve(&r.s, 2, 2 * bytes, &v));
+    assert(!sophia_ss_cancel(&r.s, &v));
+    assert(!r.s.reserved && !r.s.queued && r.s.next_ticket == 1);
+    assert(sophia_ss_cancel(&r.s, &v) == SOPHIA_9P_ARGUMENT);
     assert(!sophia_ss_submit(&r.s, group, 1, &first) && first == 1);
     rig_run(&r, 4);
     assert(!sophia_ss_reserve(&r.s, 2, 2 * bytes, &v));
