@@ -419,6 +419,22 @@ static void custody_cannot_cross_undisclosed_events(void)
 }
 int main(void)
 {
+    {
+        struct rig r;
+        struct sophia_ss_reservation token;
+        struct sophia_sf_record records[2] = {candidate(1), candidate(2)};
+        uint64_t ticket;
+        ready(&r, 1, 1);
+        records[1].value.descriptor_candidate.transaction = 2;
+        size_t bytes = sophia_ss_record_bytes(&records[0]) + sophia_ss_record_bytes(&records[1]);
+        assert(!sophia_ss_reserve(&r.s, 2, bytes, &token));
+        rig_run(&r, 2);
+        assert(!sophia_ss_commit(&r.s, &token, records, 2, &ticket));
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+        assert(rig_until(&r, ticket + 1, 32) == SOPHIA_SS_SUBMITTED);
+        rig_close(&r);
+    }
     readiness();
     bad_offers();
     wrong_role_and_welcome();

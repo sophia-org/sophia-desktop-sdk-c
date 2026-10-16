@@ -1,5 +1,14 @@
 # Extraction and contract provenance
 
+## t333 general batch comparison
+
+Rust's general batch API now covers the native, descriptor, indicator and
+catalog records already accepted by C's submission/reservation API. A new C
+scripted-session control reserves a descriptor pair, services the connection,
+then commits both and observes each Submitted outcome. Full `make check`
+passes. Matrix 14 records raw-submission responsibilities and Rust's prepared
+handle ownership. C layouts and production behavior are unchanged.
+
 ## t333 presentation and edit convenience comparison
 
 Rust now provides borrowed presentation metadata and reserve-before-edit
