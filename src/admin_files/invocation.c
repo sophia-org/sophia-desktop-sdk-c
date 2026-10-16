@@ -1,9 +1,9 @@
-#include "../sophia_admin_files.h"
+#include "internal.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
-static int name_valid(const char *name, size_t n) {
+int sophia_af_name_valid(const char *name, size_t n) {
   size_t i;
   if (!name || !n || n > 128 || name[0] == ' ' || name[n-1] == ' ') return 0;
   for (i = 0; i < n; ++i) {
@@ -14,7 +14,7 @@ static int name_valid(const char *name, size_t n) {
   return 1;
 }
 
-static int number(const unsigned char *p, size_t length, size_t *pos,
+int sophia_af_number(const unsigned char *p, size_t length, size_t *pos,
                   unsigned char delimiter, uint64_t *out) {
   size_t start = *pos;
   uint64_t n = 0;
@@ -37,19 +37,19 @@ int sophia_af_decode_invocation(const void *bytes, size_t length,
   uint64_t count;
   if (!p || !out || length < 11 || length > SOPHIA_AF_LINE_MAX_BYTES ||
       memcmp(p, "v1 invoke ", 10) || p[length-1] != '\n') return -1;
-  if (number(p, length, &pos, ' ', &v.connection) ||
-      number(p, length, &pos, ' ', &v.request) ||
-      number(p, length, &pos, ' ', &v.generation)) return -1;
+  if (sophia_af_number(p, length, &pos, ' ', &v.connection) ||
+      sophia_af_number(p, length, &pos, ' ', &v.request) ||
+      sophia_af_number(p, length, &pos, ' ', &v.generation)) return -1;
   if (length - pos >= 7 && !memcmp(p + pos, "policy ", 7)) {
     v.owner = SOPHIA_AF_POLICY; pos += 7;
   } else if (length - pos >= 8 && !memcmp(p + pos, "session ", 8)) {
     v.owner = SOPHIA_AF_SESSION; pos += 8;
   } else return -1;
-  if (number(p, length, &pos, ':', &count) || pos >= length ||
+  if (sophia_af_number(p, length, &pos, ':', &count) || pos >= length ||
       count != length - pos - 1 || !v.connection || !v.request || !v.generation) return -1;
   v.name = (const char *)p + pos;
   v.name_length = (size_t)count;
-  if (!name_valid(v.name, v.name_length)) return -1;
+  if (!sophia_af_name_valid(v.name, v.name_length)) return -1;
   *out = v;
   return 0;
 }
@@ -60,7 +60,7 @@ int sophia_af_encode_invocation(const struct sophia_af_invocation *v,
   int n;
   const char *owner;
   if (!v || !bytes || !written || !v->connection || !v->request || !v->generation ||
-      !name_valid(v->name, v->name_length)) return -1;
+      !sophia_af_name_valid(v->name, v->name_length)) return -1;
   if (v->owner == SOPHIA_AF_POLICY) owner = "policy";
   else if (v->owner == SOPHIA_AF_SESSION) owner = "session";
   else return -1;

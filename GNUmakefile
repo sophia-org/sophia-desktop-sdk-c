@@ -36,6 +36,7 @@ FILE_TESTS += namespace_test
 FILE_TESTS += admin_files_test
 FILE_TESTS += admin_invocation_test
 FILE_TESTS += admin_status_test
+FILE_TESTS += admin_catalog_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif

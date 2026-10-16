@@ -47,6 +47,26 @@ struct sophia_af_status {
  * are zero. Failure leaves out unchanged; identity/owner checks belong to client. */
 int sophia_af_decode_status(const void *bytes, size_t length,
                             struct sophia_af_status *out);
+#define SOPHIA_AF_CATALOG_MAX_COMMANDS 259u
+#define SOPHIA_AF_CATALOG_MAX_BYTES 39432u
+struct sophia_af_command {
+  enum sophia_af_owner owner;
+  const char *name;
+  size_t name_length;
+};
+struct sophia_af_catalog {
+  uint64_t generation;
+  size_t count;
+  struct sophia_af_command rows[SOPHIA_AF_CATALOG_MAX_COMMANDS];
+};
+/* Bounded inline rows, names borrowed from input. Keep input alive/unchanged.
+ * Validates the entire snapshot without allocation; failure leaves out unchanged.
+ * Caller establishes file EOF. Discovery supplies names, never permission. */
+int sophia_af_decode_catalog(const void *bytes, size_t length,
+                             struct sophia_af_catalog *out);
+/* Use a successfully decoded, unchanged catalog. No allocation. */
+int sophia_af_catalog_contains(const struct sophia_af_catalog *catalog,
+                               const struct sophia_af_command *command);
 #ifdef __cplusplus
 }
 #endif
