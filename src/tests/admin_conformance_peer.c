@@ -59,7 +59,8 @@ int main(int argc, char **argv) {
   assert(argc == 4 && s && storage && fd >= 0);
   start = clock_ms();
   assert(!strcmp(argv[3], "settle") || !strcmp(argv[3], "revoke") ||
-         !strcmp(argv[3], "loss") || !strcmp(argv[3], "recover"));
+         !strcmp(argv[3], "loss") || !strcmp(argv[3], "recover") ||
+         !strcmp(argv[3], "denied"));
   revoke = strcmp(argv[3], "settle") != 0;
   assert(strlen(argv[1]) < sizeof address.sun_path);
   address.sun_family = AF_UNIX;
@@ -68,11 +69,27 @@ int main(int argc, char **argv) {
   assert(!sophia_9p_init(&wire, fd, 65536, 2, 4, storage, size));
   assert(!sophia_ad_connect_init(&connecting, &wire, s, 0, 2000));
   while (!sophia_ad_connect_ready(&connecting)) {
+    int result;
     wake = 2000;
     (void)sophia_ad_connect_next_wake(&connecting, &wake);
     wait_io(fd, sophia_ad_connect_wants_write(&connecting), wake);
-    assert(!sophia_ad_connect_dispatch(&connecting, now(), 65536));
+    result = sophia_ad_connect_dispatch(&connecting, now(), 65536);
+    if (result) {
+      assert(!strcmp(argv[3], "denied"));
+      /* Admission closes the reachable socket before negotiation, not by
+       * timeout. */
+      assert(result == SOPHIA_AD_WIRE &&
+             (connecting.component_error == SOPHIA_9P_IO ||
+              connecting.component_error == SOPHIA_9P_CLOSED));
+      assert(!sophia_ad_connect_ready(&connecting));
+      assert(!sophia_ad_connect_take_session(&connecting));
+      close(fd);
+      free(storage);
+      free(s);
+      return 0;
+    }
   }
+  assert(strcmp(argv[3], "denied"));
   assert(sophia_ad_connect_take_session(&connecting) == s);
   assert(sophia_ad_catalog(s)->generation == 7);
   assert(!sophia_ad_invoke(s, &command, now(), &request) && request == 1);
