@@ -410,8 +410,36 @@ static void reservation_is_bound_to_its_session(void)
     rig_close(&b);
 }
 
+static void old_and_unissued_tickets(void)
+{
+    struct rig r;
+    struct sophia_sf_record request;
+    enum sophia_ss_outcome o;
+    uint64_t ticket;
+    unsigned i;
+    rig_ready(&r, &rig_config);
+    assert(sophia_ss_outcome(&r.s, 0, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_outcome(&r.s, 1, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    for (i = 1; i <= SOPHIA_SS_OUTCOMES + 1; i++) {
+        request = rig_request(i);
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket) && ticket == i);
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
+    }
+    assert(rig_outcome(&r, 1) == SOPHIA_SS_UNAVAILABLE);
+    assert(rig_outcome(&r, 2) == SOPHIA_SS_SUBMITTED);
+    assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED);
+    assert(sophia_ss_outcome(&r.s, ticket + 1, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    assert(sophia_ss_outcome(&r.s, UINT64_MAX, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    sophia_ss_close(&r.s);
+    assert(rig_outcome(&r, 1) == SOPHIA_SS_UNAVAILABLE);
+    assert(rig_outcome(&r, 2) == SOPHIA_SS_SUBMITTED);
+    rig_close(&r);
+}
+
 int main(void)
 {
+    old_and_unissued_tickets();
     admission_atomicity();
     reservation();
     reservation_is_bound_to_its_session();
