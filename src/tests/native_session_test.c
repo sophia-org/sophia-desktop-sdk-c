@@ -799,6 +799,15 @@ static void test_action(void)
     unsigned before;
     action(g, 30, 1);
     (void)next(&n, &e, SOPHIA_NS_EV_ACTION);
+    {
+        struct sophia_ns_obligations o;
+        uint64_t due;
+        assert(!sophia_ns_obligations(&n, &o));
+        due = o.action_due_ms;
+        assert(due == n.head_ms + F.limits.action_ack_timeout_ms);
+        assert(!sophia_ns_next(&n, n.head_ms + 100, &e));
+        assert(!sophia_ns_obligations(&n, &o) && o.action_due_ms == due);
+    }
     assert(e.current && e.ack_owed && e.can_activate && sophia_ns_done(&n) == SOPHIA_9P_ARGUMENT);
     F.submit_busy = 1;
     assert(sophia_ns_action_ack(&n, 1, 1, &t) == SOPHIA_9P_BUSY && F.head < F.pushed);

@@ -1,5 +1,15 @@
 # Extraction and contract provenance
 
+## t333 owning Rust facade comparison
+
+Rust now owns and services a native connection through `NativeLauncherSession`.
+C retains its borrowed `sophia_ns`/`sophia_ss` model. Matrix 12 documents event,
+transaction, snapshot and clock differences. A C regression verifies that reading
+an Action again does not restart its receipt-based deadline hint. Full
+`make check` passes. Rust's five facade controls and full workspace checks pass;
+production-export qualification remains pending. C layouts and behavior are
+unchanged in this slice.
+
 ## t333 native pointer response comparison
 
 The Rust lifecycle now matches C's retained Action and atomic activation/ACK
