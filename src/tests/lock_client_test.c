@@ -61,7 +61,7 @@ struct peer {
   unsigned hold_upload, held_uploads, upload_short, upload_error, upload_ends;
   uint16_t held_tag;
   uint64_t held_sequence;
-  uint32_t submit_error, extra_grant;
+  uint32_t submit_error, extra_grant, error_after_custody;
   uint8_t last_bytes[SOPHIA_LF_MAX_CANDIDATE];
   size_t last_size;
   struct sophia_lf_resource_begin begin;
@@ -331,6 +331,11 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
     return;
   }
   submitted(p, id, c.header.kind);
+  if (p->error_after_custody) {
+    events(p);
+    error(p, tag, p->error_after_custody);
+    return;
+  }
   accept_candidate(p, &c);
   count(p, tag, SOPHIA_LF_SUBMIT_BYTES);
 }
@@ -811,6 +816,25 @@ static void again_then_retry(void) {
   rig_free(r);
 }
 
+static void contradictory_retry_preserves_custody(void) {
+  struct rig *r = ready();
+  struct sophia_lf_record v = {0};
+  enum sophia_lc_submission stage;
+  uint64_t id;
+  v.header.kind = SOPHIA_LF_RESOURCE_RETIRE;
+  v.value.resource_step.transaction = 40;
+  v.value.resource_step.resource.id = 21;
+  v.value.resource_step.resource.generation = 2;
+  r->peer.error_after_custody = 11;
+  assert(!sophia_lc_submit(&r->client, &v));
+  assert(spin(r));
+  assert(sophia_lc_remote_error(&r->client) == 11);
+  assert(!sophia_lc_submission(&r->client, &id, &stage, NULL));
+  assert(id == 2 && stage == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  assert(sophia_lc_submit_retry(&r->client));
+  rig_free(r);
+}
+
 static void release_ack(struct peer *p) {
   assert(p->held_sequence);
   p->hold_acks = 0;
@@ -963,6 +987,7 @@ int main(void) {
   upload_pipeline_tests();
   rejected_and_refused_uploads();
   again_then_retry();
+  contradictory_retry_preserves_custody();
   custody_waits_for_ack();
   refused_negotiation();
   stale_connection();

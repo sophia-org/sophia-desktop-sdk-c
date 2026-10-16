@@ -230,7 +230,7 @@ static int submit_reply(struct sophia_lc_client *c,
                         const struct sophia_9p_reply *r) {
   if (r->type == 7 && c->submit_stage == LC_TX_SUBMIT) {
     /* EAGAIN transferred nothing; it waits for submit_retry. */
-    if (r->error == 11) {
+    if (r->error == 11 && !c->submitted) {
       c->submit_sent = 0;
       c->submit_wait = 1;
       return 0;
