@@ -34,6 +34,8 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test
 FILE_TESTS += namespace_test
 FILE_TESTS += admin_files_test
+FILE_TESTS += admin_invocation_test
+FILE_TESTS += admin_status_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
