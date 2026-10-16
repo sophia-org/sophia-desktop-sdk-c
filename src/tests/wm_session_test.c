@@ -518,6 +518,34 @@ static void profile_commands_and_outcomes_are_ordered(void) {
   assert(sophia_ws_state(r->session) == SOPHIA_WS_READY);
   wr_drop(r);
 }
+static void profile_completions_preserve_echo_and_domain_allocator(void) {
+  struct wm_rig *r = wr_new();
+  unsigned kind, outcome;
+  uint64_t ticket, domain;
+  wr_ready(r);
+  steps(r, 30);
+  for (kind = 257; kind <= 259; ++kind) {
+    for (outcome = 1; outcome <= 3; ++outcome) {
+      struct sophia_wf_record candidate = {0};
+      candidate.header.kind = (uint16_t)kind;
+      candidate.value.profile.transaction = 40;
+      candidate.value.profile.generation = 3;
+      memset(candidate.value.profile.digest, 7, 32);
+      candidate.value.profile.outcome = (uint16_t)outcome;
+      assert(!sophia_ws_submit(r->session, &candidate, r->now + 10000, &ticket));
+      steps(r, 30);
+      assert(wr_custody(r, ticket) == SOPHIA_WS_SUBMITTED);
+      assert(r->peer.tx_size == 88 && wp_get(r->peer.tx + 6, 2) == kind);
+      assert(wp_get(r->peer.tx + 32, 8) == 40 && wp_get(r->peer.tx + 40, 8) == 3);
+      assert(!memcmp(r->peer.tx + 48, candidate.value.profile.digest, 32));
+      assert(wp_get(r->peer.tx + 80, 2) == outcome && !wp_get(r->peer.tx + 82, 6));
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_READY);
+    }
+  }
+  assert(!sophia_ws_next_transaction(r->session, &domain) && domain == 1);
+  assert(r->peer.submits == 10 && r->peer.acked == 11);
+  wr_drop(r);
+}
 static void snapshot_retry_is_paced_and_truncation_refuses(void) {
   struct wm_rig *r = wr_new();
   const struct sophia_wf_record *snapshot;
@@ -826,6 +854,7 @@ int main(void) {
     RUN(event_lengths_and_sequences_fail_immediately);
     RUN(ack_faults_and_revocation_keep_custody);
     RUN(profile_commands_and_outcomes_are_ordered);
+    RUN(profile_completions_preserve_echo_and_domain_allocator);
     RUN(snapshot_retry_is_paced_and_truncation_refuses);
     RUN(full_retained_journal_still_observes_submitted);
     RUN(presentation_receipt_requires_negotiated_capability);
