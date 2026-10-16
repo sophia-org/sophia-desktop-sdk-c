@@ -1,5 +1,14 @@
 # Extraction and contract provenance
 
+## t333 local close comparison and shell audit
+
+Rust now exposes explicit local close with retained custody. C's existing
+`unknown_after_issued_submit`, staged-close, closed-reservation and outcome-ring
+tests cover the matching outcomes; full `make check` passes. Matrix 16 maps
+remaining shell session operations and names Rust's automatic fetch/journal
+policy and missing allocation-free size query, for production-export review.
+C code and layouts are unchanged in this slice.
+
 ## t333 configurable queue comparison
 
 Rust can now represent every C queue size and select zero control headroom for
