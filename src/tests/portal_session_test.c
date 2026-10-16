@@ -48,7 +48,9 @@ static void send_reply(int fd, unsigned type, unsigned tag, const void *p,
     used += (size_t)r;
   }
 }
-static void peer(int fd, unsigned fault) {
+/* Cases 5/6 forbid watch data; 7 cancels before dispatching the walk, 8 while
+ * open is held by the peer, and 9 after status and revocation arrive together. */
+static void peer(int fd, int barrier, unsigned fault) {
   unsigned char h[7], b[4096], r[4096];
   char names[16][32] = {{0}};
   unsigned old = 65536, flushes = 0;
@@ -91,7 +93,12 @@ static void peer(int fd, unsigned fault) {
       send_reply(fd, 111, tag, r, 15);
       break;
     case 12:
+      assert(fault != 7 || strcmp(name, "watch"));
       assert(!get(b + 4, 4));
+      if (fault == 8 && !strcmp(name, "watch")) {
+        unsigned char signal = 1;
+        assert(write(barrier, &signal, 1) == 1 && exact(barrier, &signal, 1));
+      }
       send_reply(fd, 13, tag, r, 17);
       break;
     case 116:
@@ -107,8 +114,24 @@ static void peer(int fd, unsigned fault) {
           count = length - offset;
         put(r, count, 4);
         memcpy(r + 4, api + offset, count);
-        send_reply(fd, 117, tag, r, count + 4);
+        if (fault == 9 && !strcmp(name, "status") && !offset) {
+          unsigned char batch[128], signal = 1;
+          size_t first = count + 11;
+          assert(write(barrier, &signal, 1) == 1 && exact(barrier, &signal, 1));
+          put(batch, first, 4);
+          batch[4] = 117;
+          put(batch + 5, tag, 2);
+          memcpy(batch + 7, r, count + 4);
+          put(batch + first, 11, 4);
+          batch[first + 4] = 7;
+          put(batch + first + 5, old, 2);
+          put(batch + first + 7, 116, 4);
+          assert(write(fd, batch, first + 11) == (ssize_t)(first + 11));
+          assert(write(barrier, &signal, 1) == 1);
+        } else
+          send_reply(fd, 117, tag, r, count + 4);
       } else {
+        assert(fault != 7 && fault != 8);
         assert(!get(b + 4, 8) && get(b + 12, 4) == 1);
         assert(old == 65536);
         old = tag;
@@ -120,6 +143,13 @@ static void peer(int fd, unsigned fault) {
       if (fault == 1 || fault == 2) {
         put(r, 116, 4);
         send_reply(fd, 7, old, r, 4);
+      }
+      if (fault == 5 || fault == 6) {
+        put(r, fault == 6, 4);
+        r[4] = 42;
+        send_reply(fd, 117, old, r, fault == 6 ? 5 : 4);
+        /* No Rflush: malformed data must fail without waiting for cleanup. */
+        break;
       }
       if (fault == 3) {
         put(r, 5, 4);
@@ -143,16 +173,17 @@ static void peer(int fd, unsigned fault) {
     }
   }
 finished:
-  assert(watches == 1 && flushes == 1);
-  assert(clunks == (unsigned)(fault < 3));
+  assert(watches == 1 && flushes == (unsigned)(fault < 7));
+  assert(clunks == (unsigned)(fault < 3 || fault >= 7));
+  close(barrier);
   close(fd);
   _exit(0);
 }
 int main(void) {
   unsigned fault;
   alarm(20);
-  for (fault = 0; fault < 5; ++fault) {
-    int pair[2], status;
+  for (fault = 0; fault < 10; ++fault) {
+    int pair[2], control[2], status;
     pid_t child;
     struct sophia_9p_client wire;
     struct sophia_9p_handle handle;
@@ -168,13 +199,16 @@ int main(void) {
     size_t bytes = sophia_9p_storage_bytes(4096, 4);
     void *storage = malloc(bytes);
     assert(storage && !socketpair(AF_UNIX, SOCK_STREAM, 0, pair));
+    assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, control));
     child = fork();
     assert(child >= 0);
     if (!child) {
       close(pair[0]);
-      peer(pair[1], fault);
+      close(control[0]);
+      peer(pair[1], control[1], fault);
     }
     close(pair[1]);
+    close(control[1]);
     assert(!sophia_9p_init(&wire, pair[0], 4096, 4, 4, storage, bytes));
     assert(!sophia_9p_version(&wire, &handle));
     do {
@@ -196,14 +230,37 @@ int main(void) {
     }
     assert(!sophia_pcs_init(&session, &opening));
     assert(!sophia_pcs_watch(&session, 100));
-    while (!sophia_pcs_watch_waiting(&session)) {
+    while (fault != 7 && fault != 8 && !sophia_pcs_watch_waiting(&session)) {
       assert(!sophia_pcs_dispatch(&session, 10, 1));
       sched_yield();
     }
     assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_STATUS, snapshot,
                                 sizeof snapshot, 100));
+    if (fault == 8 || fault == 9) {
+      unsigned char signal;
+      for (;;) {
+        ssize_t n = recv(control[0], &signal, 1, MSG_DONTWAIT);
+        if (n == 1)
+          break;
+        assert(n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK));
+        assert(!sophia_pcs_dispatch(&session, 10, 1));
+        sched_yield();
+      }
+      if (fault == 9) {
+        assert(write(control[0], &signal, 1) == 1 &&
+               exact(control[0], &signal, 1));
+        /* C routes both decoded replies in this dispatch; cancellation must
+         * preserve the revocation without flushing an already settled tag. */
+        assert(!sophia_pcs_dispatch(
+            &session, 10, strlen("request=unavailable transfer=ready\n") + 22));
+      }
+    }
     assert(!sophia_pcs_cancel_watch(&session));
-    assert(sophia_pcs_dispatch(&session, 9, 4096) ==
+    if (fault == 8) {
+      unsigned char signal = 1;
+      assert(write(control[0], &signal, 1) == 1);
+    }
+    assert(sophia_pcs_dispatch(&session, 0, 4096) ==
                SOPHIA_PS_CLOCK_REGRESSION &&
            !session.error);
     while (!session.error &&
@@ -212,9 +269,10 @@ int main(void) {
       (void)sophia_pcs_dispatch(&session, 10, 1);
       sched_yield();
     }
-    if (fault < 2) {
+    if (fault < 2 || fault >= 7) {
       const char *expected = "request=unavailable transfer=ready\n";
-      assert(event == (fault ? SOPHIA_PCS_REVOKED : SOPHIA_PCS_CANCELLED));
+      assert(event == (fault == 1 || fault == 9 ? SOPHIA_PCS_REVOKED
+                                                : SOPHIA_PCS_CANCELLED));
       assert(length == strlen(expected) && !memcmp(result, expected, length));
       assert(!sophia_pcs_release_watch(&session));
       assert(!sophia_pcs_release_snapshot(&session));
@@ -222,11 +280,14 @@ int main(void) {
       assert(sophia_po_ready(&opening) && wire.fid_count == 1);
     } else {
       assert(session.error);
+      if (fault == 5 || fault == 6)
+        assert(session.error == SOPHIA_PS_INVALID);
       assert(!sophia_pcs_watch_event(&session, &event, &remote));
       assert(!sophia_pcs_snapshot_result(&session, &result, &length));
       assert(sophia_pcs_finish(&session) == session.error);
     }
     close(pair[0]);
+    close(control[0]);
     free(storage);
     assert(waitpid(child, &status, 0) == child && WIFEXITED(status) &&
            WEXITSTATUS(status) == 0);
