@@ -33,6 +33,9 @@ struct peer {
   unsigned versions, attaches, submits, acks, tx_opens, topology_open, topology_opens;
   unsigned topology_again, submit_again, events_pending, negotiated;
   uint32_t submit_error, wrong_qid, extra_grant, outcome_after;
+  unsigned short_ack;
+  unsigned disconnect_submit;
+  uint32_t ack_error;
   uint64_t refused;
   uint64_t last_bytes_id;
   uint8_t last_bytes[SOPHIA_OF_MAX_CANDIDATE];
@@ -216,6 +219,14 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
     return;
   }
   p->last_submit_id = id;
+  if (p->disconnect_submit && c.header.kind == SOPHIA_OF_PROPOSAL) {
+    if (p->disconnect_submit == 2) {
+      submitted(p, id, c.header.kind);
+      events(p);
+    }
+    assert(!shutdown(p->fd, SHUT_WR));
+    return;
+  }
   submitted(p, id, c.header.kind);
   if (c.header.kind == SOPHIA_OF_NEGOTIATE) {
     struct sophia_of_record r = {0};
@@ -341,6 +352,14 @@ static void request(struct peer *p, const uint8_t *m) {
       assert(!offset && n == 16 && get(d, 8) == EPOCH);
       assert(sequence >= p->acked && sequence <= p->sequence);
       ++p->acks;
+      if (p->ack_error) {
+        error(p, tag, p->ack_error);
+        return;
+      }
+      if (p->short_ack) {
+        count(p, tag, 15);
+        return;
+      }
       /* Premature acknowledgement of an announcement releases nothing. */
       if (sequence >= p->announced && p->announced > p->acked &&
           p->object_read < p->object_size) {
@@ -766,6 +785,57 @@ static void protocol_faults(void) {
   drop(r);
 }
 
+static void terminal_ack_faults(void) {
+  const uint32_t errors[] = {0, 22, 116};
+  unsigned k;
+  for (k = 0; k < 3; ++k) {
+    struct rig *r = rig();
+    struct sophia_of_proposal v = proposal(1);
+    uint64_t ticket;
+    enum sophia_os_state state;
+    unsigned i;
+    ready(r);
+    r->peer.outcome_after = SOPHIA_OF_COMMITTED;
+    assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+    assert(next_event(r));
+    assert(custody(r, ticket, NULL) == SOPHIA_OS_SUBMITTED);
+    r->peer.short_ack = errors[k] == 0;
+    r->peer.ack_error = errors[k];
+    assert(!sophia_os_consume(r->session));
+    for (i = 0; i < 400 && !step(r); ++i) {}
+    assert(i < 400);
+    state = errors[k] == 116 ? SOPHIA_OS_STALE : SOPHIA_OS_FAILED;
+    assert(sophia_os_state(r->session) == state);
+    assert(sophia_os_remote_error(r->session) == errors[k]);
+    assert(custody(r, ticket, NULL) == SOPHIA_OS_SUBMITTED);
+    sophia_os_close(r->session);
+    assert(sophia_os_state(r->session) == state);
+    assert(custody(r, ticket, NULL) == SOPHIA_OS_SUBMITTED);
+    drop(r);
+  }
+}
+
+static void disconnected_proposal_custody(void) {
+  unsigned accepted;
+  for (accepted = 0; accepted < 2; ++accepted) {
+    struct rig *r = rig();
+    struct sophia_of_proposal v = proposal(1);
+    uint64_t ticket;
+    unsigned i;
+    enum sophia_os_custody expected = accepted ? SOPHIA_OS_SUBMITTED
+                                                : SOPHIA_OS_UNKNOWN_DISCONNECTED;
+    ready(r);
+    r->peer.disconnect_submit = accepted + 1;
+    assert(!sophia_os_submit(r->session, &v, r->now + 1000, &ticket));
+    for (i = 0; i < 400 && !step(r); ++i) {}
+    assert(i < 400);
+    assert(custody(r, ticket, NULL) == expected);
+    sophia_os_close(r->session);
+    assert(custody(r, ticket, NULL) == expected);
+    drop(r);
+  }
+}
+
 static void arguments(void) {
   struct sophia_os_config cfg;
   void *state = calloc(1, sophia_os_state_bytes());
@@ -792,6 +862,8 @@ int main(void) {
     all_output_outcomes_remain_ordered();
     observe_only_and_refusal();
     protocol_faults();
+    terminal_ack_faults();
+    disconnected_proposal_custody();
   }
   arguments();
   puts("output_session_test: ok");
