@@ -8,8 +8,10 @@ extern "C" {
 enum sophia_ps_file {
   SOPHIA_PS_API = 1,
   SOPHIA_PS_CAPTURE_STATUS,
-  SOPHIA_PS_STATUS
+  SOPHIA_PS_STATUS,
+  SOPHIA_PS_TRANSFER
 };
+#define SOPHIA_PS_TRANSFER_MAX_BYTES 65536u
 enum sophia_ps_error {
   SOPHIA_PS_INVALID = -1,
   SOPHIA_PS_BUSY = -2,
@@ -31,7 +33,10 @@ struct sophia_ps_operation {
   uint64_t offset;
 };
 /* Private fields for caller-owned allocation; do not modify. Storage is
- * borrowed for the entire fetch and must not overlap this object or replies. */
+ * borrowed for the entire fetch and must not overlap this object or replies.
+ * TRANSFER needs 64 KiB; init neither clears nor allocates it. Partial bytes
+ * remain scratch until EOF and clunk. A separately walked watch is not known
+ * to refer to this transfer; no private qid arithmetic is permitted. */
 struct sophia_ps_fetch {
   enum sophia_ps_file file;
   unsigned stage, outstanding;

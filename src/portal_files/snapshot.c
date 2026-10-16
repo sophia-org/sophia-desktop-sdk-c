@@ -10,11 +10,15 @@ const char *sophia_ps_name(enum sophia_ps_file file) {
     return "capture-status";
   case SOPHIA_PS_STATUS:
     return "status";
+  case SOPHIA_PS_TRANSFER:
+    return "transfer";
   default:
     return NULL;
   }
 }
 size_t sophia_ps_maximum(enum sophia_ps_file file) {
+  if (file == SOPHIA_PS_TRANSFER)
+    return SOPHIA_PS_TRANSFER_MAX_BYTES;
   if (file == SOPHIA_PS_CAPTURE_STATUS)
     return SOPHIA_PF_CAPTURE_STATUS_BYTES;
   return file == SOPHIA_PS_API      ? SOPHIA_PF_API_MAX_BYTES
@@ -106,6 +110,8 @@ int sophia_ps_issued(struct sophia_ps_fetch *s, uint64_t now, uint32_t msize,
 }
 static int validate(struct sophia_ps_fetch *s) {
   switch (s->file) {
+  case SOPHIA_PS_TRANSFER:
+    return 0;
   case SOPHIA_PS_API: {
     struct sophia_pf_api v;
     return sophia_pf_decode_api(s->bytes, s->used, &v);
