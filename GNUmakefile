@@ -44,6 +44,9 @@ check-files: $(addprefix $(BUILD)/,$(FILE_TESTS))
 $(BUILD)/wm_authenticated_peer: src/tests/wm_authenticated_peer.c $(LIBRARIES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
 
+$(BUILD)/output_authenticated_peer: src/tests/output_authenticated_peer.c $(LIBRARIES)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
+
 check-spec:
 	sha256sum --check spec/SHA256SUMS
 # Needs python3; not part of check because Python is not a build dependency.
