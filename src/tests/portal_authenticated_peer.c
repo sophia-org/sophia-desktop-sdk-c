@@ -27,7 +27,12 @@ int main(void) {
   uint64_t deadline = now() + 10000;
   FILE *report;
   const char *mode = getenv("SOPHIA_TEST_PORTAL_BOUNDARY");
-  int request_mode = !strcmp(mode, "sdk-request");
+  int request_mode = !strncmp(mode, "sdk-request", 11);
+  int busy = !strcmp(mode, "sdk-request-busy");
+  int stale = !strcmp(mode, "sdk-request-stale");
+  int refused = !strcmp(mode, "sdk-request-refused") || busy || stale;
+  uint32_t refusal_errno = busy ? 11 : stale ? 116 : 13;
+  int cancelled = !strncmp(mode, "sdk-request-cancelled", 21);
   int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode;
   int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
@@ -65,21 +70,34 @@ int main(void) {
   if (request_mode) {
     struct sophia_pcr request;
     struct sophia_pf_capture_request capture = {1, 7};
+    if (busy)
+      capture.serial = 2;
     enum sophia_pf_capture_state outcome;
     uint64_t serial;
     assert(
         !sophia_pcr_init(&request, &opening, capture, 0, now(), now() + 3000));
-    while (!sophia_pcr_result(&request, &outcome)) {
+    while (!request.error && !sophia_pcr_result(&request, &outcome)) {
       struct pollfd p = {
           fd, POLLIN | (sophia_pcr_wants_write(&request) ? POLLOUT : 0), 0};
       uint64_t t = now(), wake;
       assert(sophia_pcr_next_wake(&request, &wake));
       assert(t < deadline && poll(&p, 1, (int)(wake > t ? wake - t : 0)) >= 0);
-      assert(!sophia_pcr_dispatch(&request, now(), 65536));
+      int dispatch = sophia_pcr_dispatch(&request, now(), 65536);
+      if (!refused)
+        assert(!dispatch);
+    }
+    if (refused) {
+      assert(request.error == SOPHIA_PCR_CAPTURE &&
+             request.capture.custody == SOPHIA_PC_REFUSED &&
+             request.capture.remote_error == refusal_errno &&
+             !sophia_pcr_result(&request, &outcome));
+      goto report_result;
     }
     assert(!sophia_pcr_finish(&request, &outcome, &serial));
-    assert(outcome == SOPHIA_PF_READY && serial == 1 && role.fid_count == 1 &&
-           sophia_po_ready(&opening));
+    assert(outcome == (cancelled ? SOPHIA_PF_CANCELLED : SOPHIA_PF_READY) &&
+           serial == 1 && role.fid_count == 1 && sophia_po_ready(&opening));
+    if (cancelled)
+      goto report_result;
   }
   if (frame_mode) {
     struct sophia_pfr frame;
@@ -135,9 +153,12 @@ int main(void) {
     sophia_pfr_close(&frame);
     free(image);
   }
+report_result:
   report = fopen(getenv("SOPHIA_TEST_LOCK_REPORT"), "w");
   assert(report &&
-         fputs(revoke       ? "revoked\n"
+         fputs(refused      ? "request-refused\n"
+               : cancelled  ? "request-cancelled\n"
+               : revoke     ? "revoked\n"
                : frame_mode ? "frame\n"
                             : "started\n",
                report) >= 0 &&
