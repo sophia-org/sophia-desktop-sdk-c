@@ -58,7 +58,9 @@ int main(int argc, char **argv) {
   uint64_t request, wake;
   assert(argc == 4 && s && storage && fd >= 0);
   start = clock_ms();
-  revoke = !strcmp(argv[3], "revoke");
+  assert(!strcmp(argv[3], "settle") || !strcmp(argv[3], "revoke") ||
+         !strcmp(argv[3], "loss"));
+  revoke = strcmp(argv[3], "settle") != 0;
   assert(strlen(argv[1]) < sizeof address.sun_path);
   address.sun_family = AF_UNIX;
   strcpy(address.sun_path, argv[1]);
