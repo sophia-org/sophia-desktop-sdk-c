@@ -65,6 +65,10 @@ struct peer {
   uint32_t image_error[3];
   unsigned image_walks[3], image_begins;
   struct sophia_ic_record image_begin;
+  /* A ResourceCancel naming the last ImageBegin's resource, which the test
+   * answers itself, and an upload End left unanswered. */
+  unsigned image_cancels, hold_end;
+  struct sophia_lf_resource_step image_cancel;
 };
 struct rig {
   struct peer peer;
@@ -327,6 +331,7 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
   struct sophia_lf_record c;
   uint64_t id = get(d + 8, 8);
   int image = get(p->tx + 6, 2) == SOPHIA_IC_IMAGE_BEGIN;
+  int image_cancel;
   assert(get(d, 8) == EPOCH && get(d + 16, 4) == p->tx_size && !get(d + 20, 4));
   memset(&c, 0, sizeof(c));
   if (image) {
@@ -339,6 +344,9 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
   } else
     assert(!sophia_lf_decode(p->tx, p->tx_size, &c) &&
            c.header.submission == id && c.header.epoch == EPOCH);
+  image_cancel = c.header.kind == SOPHIA_LF_RESOURCE_CANCEL && p->image_begins &&
+                 c.value.resource_step.resource.id ==
+                     p->image_begin.value.image.resource_id;
   ++p->submits;
   if (id == p->last_bytes_id) /* a retry repeats the exact bytes */
     assert(p->tx_size == p->last_size &&
@@ -357,7 +365,7 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
   /* An upload is one transaction: End and Cancel carry the begin's. */
   if ((c.header.kind == SOPHIA_LF_RESOURCE_END ||
        c.header.kind == SOPHIA_LF_RESOURCE_CANCEL) &&
-      c.value.resource_step.transaction != p->begin.transaction)
+      !image_cancel && c.value.resource_step.transaction != p->begin.transaction)
     p->submit_error = 22;
   if (p->submit_error) {
     error(p, tag, p->submit_error);
@@ -373,7 +381,10 @@ static void submit(struct peer *p, uint16_t tag, const uint8_t *d) {
   /* The test journals the ImageBegin's answers itself. */
   if (image)
     ++p->image_begins;
-  else
+  else if (image_cancel) {
+    ++p->image_cancels;
+    p->image_cancel = c.value.resource_step;
+  } else if (!(p->hold_end && c.header.kind == SOPHIA_LF_RESOURCE_END))
     accept_candidate(p, &c);
   count(p, tag, SOPHIA_LF_SUBMIT_BYTES);
 }

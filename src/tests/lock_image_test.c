@@ -331,15 +331,20 @@ static struct sophia_ip *image_ready(struct image_rig *t) {
   return p;
 }
 
-static void begin_custodied(struct image_rig *t, uint64_t resource,
-                            uint64_t *offer) {
+static void begin_generation(struct image_rig *t, uint64_t resource,
+                             uint64_t generation, uint64_t *offer) {
   struct sophia_ic_metadata m = image(resource);
   uint64_t id;
   enum sophia_lc_submission stage;
   unsigned i;
-  int src = sealed(16, 16);
-  assert(sophia_lc_image_begin(&t->img, &m, src, t->now, offer) ==
-         SOPHIA_IPR_OK);
+  int src = sealed(16, 16), r;
+  m.resource_generation = generation;
+  /* BUSY keeps src with the caller while the transaction recycles. */
+  for (i = 0; i < 16 && (r = sophia_lc_image_begin(&t->img, &m, src, t->now,
+                                                    offer)) == SOPHIA_IPR_BUSY;
+       i++)
+    steps(t, 1);
+  assert(r == SOPHIA_IPR_OK);
   for (i = 0; i < 16; i++) {
     steps(t, 1);
     assert(!sophia_lc_submission(&t->r->client, &id, &stage, NULL));
@@ -350,6 +355,11 @@ static void begin_custodied(struct image_rig *t, uint64_t resource,
   assert(t->r->peer.image_begin.header.kind == SOPHIA_IC_IMAGE_BEGIN &&
          t->r->peer.image_begin.header.submission == id);
   assert(sophia_ic_metadata_equal(&t->r->peer.image_begin.value.image, &m));
+}
+
+static void begin_custodied(struct image_rig *t, uint64_t resource,
+                            uint64_t *offer) {
+  begin_generation(t, resource, 1, offer);
 }
 
 /* ---- cases --------------------------------------------------------------- */
@@ -862,6 +872,236 @@ static void journal_loss(void) {
   assert(fd_count() == base);
 }
 
+static void peer_admitted(struct image_rig *t) {
+  struct sophia_ic_record r;
+  memset(&r, 0, sizeof(r));
+  r.header.kind = SOPHIA_IC_IMAGE_ADMITTED;
+  r.value.image = t->r->peer.image_begin.value.image;
+  image_record(&t->r->peer, &r);
+}
+
+/* Steps until the latest submission leaves the client. */
+static enum sophia_lc_submission submission_end(struct image_rig *t) {
+  enum sophia_lc_submission stage;
+  uint64_t id;
+  unsigned i;
+  for (i = 0; i < 16; i++) {
+    steps(t, 1);
+    assert(!sophia_lc_submission(&t->r->client, &id, &stage, NULL));
+    if (stage == SOPHIA_LC_SUBMISSION_CUSTODIED ||
+        stage == SOPHIA_LC_SUBMISSION_REFUSED)
+      break;
+  }
+  return stage;
+}
+
+static struct sophia_ip_offer_info offer_info(struct sophia_ip *p, uint64_t offer) {
+  struct sophia_ip_offer_info info;
+  assert(sophia_ip_offer(p, offer, &info) == SOPHIA_IPR_OK);
+  return info;
+}
+
+/* Cancels once the client's previous submission has fully left it. */
+static int cancel_when_idle(struct image_rig *t, uint64_t offer) {
+  unsigned i;
+  int r = SOPHIA_IPR_BUSY;
+  for (i = 0; i < 16 && (r = sophia_lc_image_cancel(&t->img, offer, t->now)) ==
+                            SOPHIA_IPR_BUSY;
+       i++)
+    steps(t, 1);
+  return r;
+}
+
+static void cancellation(void) {
+  struct image_rig t;
+  struct sophia_lf_negotiate o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
+  struct sophia_ic_metadata m = image(120);
+  struct sophia_ip *p;
+  struct sophia_ip_offer_info info;
+  uint8_t b[256];
+  uint64_t offer, second;
+  unsigned i, held, base = fd_count();
+  int src, fd;
+  image_start(&t, 1, 2, &o);
+  assert(sophia_lc_image_cancel(&t.img, 1, t.now) == SOPHIA_IPR_CLOSED);
+  p = image_ready(&t);
+  assert(sophia_lc_image_cancel(NULL, 1, t.now) == SOPHIA_IPR_ARGUMENT);
+  assert(sophia_lc_image_cancel(&t.img, 1, t.now) == SOPHIA_IPR_ARGUMENT);
+  /* ImageBegin in flight: BUSY, and the offer is not marked. */
+  src = sealed(16, 16);
+  assert(sophia_lc_image_begin(&t.img, &m, src, t.now, &offer) == SOPHIA_IPR_OK);
+  assert(sophia_lc_image_cancel(&t.img, offer, t.now) == SOPHIA_IPR_BUSY);
+  assert(!offer_info(p, offer).cancel_requested);
+  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  /* Before admission: one ResourceCancel naming the offer's transaction. */
+  assert(cancel_when_idle(&t, offer) == SOPHIA_IPR_OK);
+  /* The cancel is on the wire before the caller polls. */
+  assert(sophia_9p_wants_write(&t.r->wire));
+  assert(offer_info(p, offer).cancel_requested);
+  assert(sophia_lc_image_cancel(&t.img, offer, t.now) == SOPHIA_IPR_BUSY);
+  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  assert(t.r->peer.image_cancels == 1 &&
+         t.r->peer.image_cancel.transaction == offer &&
+         t.r->peer.image_cancel.resource.id == 120 &&
+         t.r->peer.image_cancel.resource.generation == 1 &&
+         !t.r->peer.image_cancel.total_bytes);
+  assert(cancel_when_idle(&t, offer) == SOPHIA_IPR_REFUSED);
+  /* Admitted afterward: no source; the fd is held until SourceReleased. */
+  peer_admitted(&t);
+  steps(&t, 8);
+  assert(owner_receive(&t, b, sizeof(b), &fd) < 0 && errno == EAGAIN);
+  assert(offer_info(p, offer).state == SOPHIA_IPO_ADMITTED);
+  held = fd_count();
+  peer_status(&t.r->peer, offer, 120, SOPHIA_LF_CANCELLED, 0);
+  steps(&t, 4);
+  info = offer_info(p, offer);
+  assert(info.state == SOPHIA_IPO_ADMITTED && info.status == SOPHIA_IPS_CANCELLED);
+  assert(fd_count() == held);
+  peer_released(&t.r->peer, offer, 120);
+  steps(&t, 4);
+  assert(offer_info(p, offer).state == SOPHIA_IPO_SETTLED);
+  assert(fd_count() == held - 1);
+  assert(sophia_ip_forget(p, offer) == SOPHIA_IPR_OK);
+  /* Acceptance wins the race; the release still settles it. */
+  begin_custodied(&t, 121, &second);
+  peer_admitted(&t);
+  for (i = 0; i < 8 && owner_receive(&t, b, sizeof(b), &fd) < 0; i++)
+    steps(&t, 1);
+  assert(fd >= 0);
+  close(fd);
+  assert(cancel_when_idle(&t, second) == SOPHIA_IPR_OK);
+  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  peer_status(&t.r->peer, second, 121, SOPHIA_LF_ACCEPTED, 0);
+  peer_released(&t.r->peer, second, 121);
+  steps(&t, 6);
+  info = offer_info(p, second);
+  assert(info.state == SOPHIA_IPO_SETTLED && info.status == SOPHIA_IPS_ACCEPTED &&
+         info.cancel_requested);
+  assert(sophia_ip_forget(p, second) == SOPHIA_IPR_OK);
+  /* A refused cancel keeps the mark and is not an ImageBegin refusal. */
+  begin_custodied(&t, 122, &offer);
+  t.r->peer.submit_error = 22;
+  assert(cancel_when_idle(&t, offer) == SOPHIA_IPR_OK);
+  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_REFUSED);
+  assert(sophia_lc_ready(&t.r->client));
+  info = offer_info(p, offer);
+  assert(info.state == SOPHIA_IPO_BEGUN && info.cancel_requested);
+  peer_admitted(&t);
+  steps(&t, 8);
+  assert(owner_receive(&t, b, sizeof(b), &fd) < 0 && errno == EAGAIN);
+  assert(offer_info(p, offer).state == SOPHIA_IPO_ADMITTED);
+  peer_released(&t.r->peer, offer, 122);
+  steps(&t, 4);
+  assert(offer_info(p, offer).state == SOPHIA_IPO_SETTLED);
+  assert(sophia_ip_forget(p, offer) == SOPHIA_IPR_OK);
+  /* An owner-initiated Cancelled routes without a local mark. */
+  begin_custodied(&t, 123, &offer);
+  peer_status(&t.r->peer, offer, 123, SOPHIA_LF_CANCELLED, 0);
+  steps(&t, 4);
+  info = offer_info(p, offer);
+  assert(info.state == SOPHIA_IPO_REFUSED && info.status == SOPHIA_IPS_CANCELLED &&
+         !info.cancel_requested);
+  assert(sophia_ip_forget(p, offer) == SOPHIA_IPR_OK);
+  assert(sophia_ip_channel(p) == SOPHIA_IPC_READY);
+  image_close(&t);
+  assert(fd_count() == base);
+}
+
+/* A refused image cancel leaves a byte upload's pending End alone, whether
+ * its resource differs in ID or only in generation. */
+static void cancel_beside_upload(void) {
+  struct image_rig t;
+  struct sophia_lf_negotiate o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
+  struct sophia_lf_resource_begin begin;
+  struct sophia_lf_record status;
+  struct sophia_ip *p;
+  uint8_t pixels[32] = {0};
+  uint64_t offers[2];
+  unsigned i;
+  int r;
+  image_start(&t, 1, 2, &o);
+  p = image_ready(&t);
+  begin_generation(&t, 21, 1, &offers[0]);
+  begin_generation(&t, 22, 2, &offers[1]);
+  memset(&begin, 0, sizeof(begin));
+  begin.transaction = 30;
+  begin.resource.id = 21;
+  begin.resource.generation = 2;
+  begin.width_px = 4;
+  begin.height_px = 2;
+  begin.slot = 1;
+  for (i = 0; i < 16 && (r = sophia_lc_upload_begin(&t.r->client, &begin)) ==
+                            SOPHIA_9P_BUSY;
+       i++)
+    steps(&t, 1);
+  assert(!r);
+  for (i = 0; i < 16 && !sophia_lc_upload_ready(&t.r->client); i++)
+    steps(&t, 1);
+  assert(sophia_lc_upload_ready(&t.r->client));
+  assert(!sophia_lc_upload_chunk(&t.r->client, pixels, sizeof(pixels)));
+  for (i = 0; i < 16 && !sophia_lc_upload_ready(&t.r->client); i++)
+    steps(&t, 1);
+  t.r->peer.hold_end = 1;
+  assert(!sophia_lc_upload_end(&t.r->client));
+  assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_CUSTODIED);
+  assert(sophia_lc_upload_pending(&t.r->client) && !t.r->client.upload_closing);
+  for (i = 0; i < 2; i++) {
+    t.r->peer.submit_error = 22;
+    assert(cancel_when_idle(&t, offers[i]) == SOPHIA_IPR_OK);
+    assert(submission_end(&t) == SOPHIA_LC_SUBMISSION_REFUSED);
+    assert(sophia_lc_upload_pending(&t.r->client) &&
+           !t.r->client.upload_closing);
+  }
+  /* Both offers stay marked; Cancelled before admission refuses each. */
+  peer_status(&t.r->peer, offers[0], 21, SOPHIA_LF_CANCELLED, 0);
+  memset(&status, 0, sizeof(status));
+  status.value.resource_status.transaction = offers[1];
+  status.value.resource_status.resource.id = 22;
+  status.value.resource_status.resource.generation = 2;
+  status.value.resource_status.status = SOPHIA_LF_CANCELLED;
+  event(&t.r->peer, SOPHIA_LF_RESOURCE_STATUS, &status);
+  steps(&t, 4);
+  for (i = 0; i < 2; i++)
+    assert(offer_info(p, offers[i]).state == SOPHIA_IPO_REFUSED &&
+           offer_info(p, offers[i]).cancel_requested);
+  image_close(&t);
+}
+
+/* The connection ends with a cancel possibly sent: custody is unknown. */
+static void cancel_journal_loss(void) {
+  struct image_rig t;
+  struct sophia_lf_negotiate o = image_offer(1, 2, CAPS | SOPHIA_LF_CAP_IMAGE_SEALED);
+  struct sophia_ip *p;
+  uint64_t offer, id;
+  enum sophia_lc_submission stage;
+  unsigned i, base = fd_count();
+  image_start(&t, 1, 2, &o);
+  p = image_ready(&t);
+  begin_custodied(&t, 140, &offer);
+  peer_admitted(&t);
+  assert(cancel_when_idle(&t, offer) == SOPHIA_IPR_OK);
+  for (i = 0; i < 8; i++) {
+    assert(!sophia_lc_service(&t.r->client, 65536));
+    assert(!sophia_lc_submission(&t.r->client, &id, &stage, NULL));
+    if (stage == SOPHIA_LC_SUBMISSION_ISSUED)
+      break;
+    pump(&t.r->peer);
+  }
+  assert(stage == SOPHIA_LC_SUBMISSION_ISSUED);
+  shutdown(t.r->peer.fd, SHUT_RDWR);
+  for (i = 0; i < 8 && !t.r->client.terminal; i++) {
+    (void)sophia_lc_service(&t.r->client, 65536);
+    t.now++;
+    (void)sophia_lc_image_dispatch(&t.img, 0, t.now);
+  }
+  assert(t.r->client.terminal);
+  assert(offer_info(p, offer).state == SOPHIA_IPO_UNKNOWN);
+  assert(sophia_ip_cause(p) == SOPHIA_IPX_JOURNAL_LOST);
+  assert(sophia_lc_image_cancel(&t.img, offer, t.now) == SOPHIA_IPR_CLOSED);
+  image_close(&t);
+  assert(fd_count() == base);
+}
+
 int main(void) {
   offers_and_attach();
   explicit_selection();
@@ -872,6 +1112,9 @@ int main(void) {
   discovery_outcomes();
   channel_closed_and_contradictions();
   journal_loss();
+  cancellation();
+  cancel_beside_upload();
+  cancel_journal_loss();
   puts("lock_image_test ok");
   return 0;
 }

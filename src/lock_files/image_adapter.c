@@ -2,6 +2,7 @@
  * wire, producer attach, journal routing and the ImageBegin submission. */
 #include "client_internal.h"
 #include "../sophia_lock_image.h"
+#include "../image_producer/internal.h"
 #include <errno.h>
 #include <unistd.h>
 
@@ -340,6 +341,41 @@ int sophia_lc_image_begin(struct sophia_lc_image *img,
     sophia_lc_internal_image_refused(img);
     return SOPHIA_IPR_REFUSED;
   }
+  if ((r = sophia_lc_internal_drive(c)))
+    c->terminal = r;
+  return SOPHIA_IPR_OK;
+}
+
+int sophia_lc_image_cancel(struct sophia_lc_image *img, uint64_t offer,
+                           uint64_t now_ms) {
+  struct sophia_lc_client *c;
+  struct sophia_ip_slot *slot;
+  struct sophia_lf_record record;
+  int r;
+  if (!img || !img->client)
+    return SOPHIA_IPR_ARGUMENT;
+  c = img->client;
+  if (!img->started || c->terminal)
+    return SOPHIA_IPR_CLOSED;
+  if (!sophia_lc_ready(c))
+    return SOPHIA_IPR_AGAIN;
+  slot = ip_slot(&img->producer, offer);
+  if (!slot)
+    return SOPHIA_IPR_ARGUMENT;
+  /* Room first: once the producer marks the offer, the cancel must queue. */
+  if (c->submit_stage || c->next_submission == UINT64_MAX)
+    return SOPHIA_IPR_BUSY;
+  memset(&record, 0, sizeof(record));
+  record.header.kind = SOPHIA_LF_RESOURCE_CANCEL;
+  record.value.resource_step.transaction = offer;
+  record.value.resource_step.resource.id = slot->metadata.resource_id;
+  record.value.resource_step.resource.generation =
+      slot->metadata.resource_generation;
+  r = sophia_ip_cancel(&img->producer, offer, now_ms);
+  if (r != SOPHIA_IPR_OK)
+    return r;
+  if (sophia_lc_internal_queue(c, &record))
+    return SOPHIA_IPR_REFUSED; /* unreachable after the room check */
   if ((r = sophia_lc_internal_drive(c)))
     c->terminal = r;
   return SOPHIA_IPR_OK;

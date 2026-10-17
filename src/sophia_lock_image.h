@@ -20,9 +20,7 @@
  * sophia_lc_event. ResourceStatus for a live image offer is routed too and
  * still presented. ImageBegin is the client's one submission.
  *
- * DMA-BUF is never requested, and offers are not cancelled here: a
- * ResourceCancel naming an offer is not yet supported. Default clients never
- * touch this file. */
+ * DMA-BUF is never requested. Default clients never touch this file. */
 #define SOPHIA_LC_IMAGE_TEXT_BYTES 2048u
 #define SOPHIA_LC_IMAGE_LIMITS_BYTES 136u
 /* Header plus one row: the smallest useful formats buffer. */
@@ -83,6 +81,17 @@ int sophia_lc_image_dispatch(struct sophia_lc_image *, short revents,
  * submit waits for sophia_lc_submit_retry as any submission does. */
 int sophia_lc_image_begin(struct sophia_lc_image *, struct sophia_ic_metadata *,
                           int source_fd, uint64_t now_ms, uint64_t *offer);
+/* Submits ResourceCancel naming offer (transaction = offer ID, the offer's
+ * resource) as the client's one submission. READY clients only. BUSY while
+ * any submission is in flight or awaits its ack, including the offer's own
+ * ImageBegin. Room is checked first; then the producer marks the offer
+ * (sophia_ip_cancel), so its source is never sent afterward. A refused
+ * cancel changes nothing else and the mark stays; a cancel possibly sent
+ * when the client ends is journal loss like any offer. REFUSED (a status, a
+ * mark, or no live custody) and ARGUMENT (unknown offer) change nothing.
+ * Acceptance may still win; settlement is only SourceReleased. */
+int sophia_lc_image_cancel(struct sophia_lc_image *, uint64_t offer,
+                           uint64_t now_ms);
 /* The producer once started, for offer, path, cause and forget queries. */
 struct sophia_ip *sophia_lc_image_producer(struct sophia_lc_image *);
 #endif

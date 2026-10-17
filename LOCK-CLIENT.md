@@ -35,7 +35,9 @@ that stops at revision 1 behaves exactly as before. In C, sealed images
 (capability 2) also need the optional adapter in sophia_lock_image.h, attached
 before Negotiated arrives. It reads the image discovery files through this
 client's wire, connects the image socket and submits ImageBegin as the one
-submission. A selection of 1, or no sealed grant, leaves the byte path.
+submission. A selection of 1, or no sealed grant, leaves the byte path. The
+adapter also cancels an offer with ResourceCancel, whose transaction is the
+offer ID; like ImageBegin it is BUSY while any submission is in flight.
 
 Ready means negotiation succeeded. The single transaction may still be busy
 recycling after its prior submission. A Busy admission changes nothing; drive
