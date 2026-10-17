@@ -1042,6 +1042,13 @@ establishes no accepted prefix; an oversized count cannot establish Stored on
 terminal cleanup. Independent regression tests cover both invalid counts. C's
 borrowed-buffer API exposes terminal failure rather than per-chunk custody.
 
+Window regressions also cover terminal-event draining, head ESTALE, and partial
+transport frames during refill. Rust tests cancellation with four issued and four
+unissued chunks: confirmed writes remain Stored and unissued chunks become
+DroppedUnsent. C refuses a caller cancellation while its borrowed upload buffer
+is outstanding; a terminal resource event still fences and drains that window
+before clunking and releasing the buffer. Neither shell SDK flushes upload tags.
+
 The shell client queues up to four writes from one borrowed, multi-chunk buffer,
 splitting at canonical boundaries, msize and iounit. Replies match by handle and
 settle in issue order. Short writes drain the invalidated tail and resume at the
