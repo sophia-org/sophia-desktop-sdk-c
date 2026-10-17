@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -118,35 +119,58 @@ static void seals_and_transfer(void) {
   assert(pwrite(fd, "X", 1, 0) == -1 && errno == EPERM);
   assert(ftruncate(fd, 4) == -1 && errno == EPERM);
   assert(ftruncate(fd, 16) == -1 && errno == EPERM);
-  close(fd); close(sockets[0]); close(sockets[1]);
+  assert(mmap(NULL, 8, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0) == MAP_FAILED
+         && errno == EPERM);
+  map = mmap(NULL, 8, PROT_READ, MAP_SHARED, fd, 0);
+  assert(map != MAP_FAILED);
+  close(fd);
+  assert(memcmp(map, "12345678", 8) == 0);
+  assert(munmap(map, 8) == 0);
+  close(sockets[0]); close(sockets[1]);
 }
 static void refusal_and_backpressure(void) {
   const unsigned counts[] = {0, 2, 4};
   unsigned i, j, received, sent;
   int sockets[2], fds[4], got[4], flags;
   struct stat st;
+  struct pollfd writable;
+  int send_buffer = 4096;
   for (i = 0; i < 3; ++i) {
     unsigned count = counts[i];
     pair(sockets);
     for (j = 0; j < count; ++j) fds[j] = source(REQUIRED);
     assert(send_fds(sockets[0], fds, count) == 6);
     received = receive(sockets[1], count == 4, &flags, got);
-    if (count == 4) assert(flags & MSG_CTRUNC);
+    if (count == 4) assert((flags & MSG_CTRUNC) && received == 0);
     else assert(received == count && received != 1);
     for (j = 0; j < received; ++j) close(got[j]);
     for (j = 0; j < count; ++j) close(fds[j]);
     close(sockets[0]); close(sockets[1]);
   }
   pair(sockets);
+  assert(setsockopt(sockets[0], SOL_SOCKET, SO_SNDBUF,
+                   &send_buffer, sizeof(send_buffer)) == 0);
   fds[0] = source(REQUIRED);
   for (sent = 0; sent < 65536; ++sent) {
     ssize_t n = send_fds(sockets[0], fds, 1);
-    if (n == -1) { assert(errno == EAGAIN); break; }
+    /* In-flight rights also have a per-user limit, independent of POLLOUT. */
+    if (n == -1) { assert(errno == EAGAIN || errno == ETOOMANYREFS); break; }
     assert(n == 6);
   }
   assert(sent < 65536);
   assert(fstat(fds[0], &st) == 0 && st.st_size == 8);
-  close(sockets[1]); /* Teardown drops the kernel's queued references. */
+  /* One receive need not cross the writable low-water mark; drain our burst. */
+  for (i = 0; i < sent; ++i) {
+    assert(receive(sockets[1], 0, &flags, got) == 1);
+    close(got[0]);
+  }
+  memset(&writable, 0, sizeof(writable));
+  writable.fd = sockets[0];
+  writable.events = POLLOUT;
+  assert(poll(&writable, 1, 0) == 1 && (writable.revents & POLLOUT));
+  /* Socket readiness does not reserve a global SCM_RIGHTS credit. */
+  assert(send_fds(sockets[0], NULL, 0) == 6);
+  close(sockets[1]); /* The final assertion observes FD-table entries only. */
   close(sockets[0]); close(fds[0]);
 }
 int main(void) {
