@@ -1,5 +1,45 @@
 # C and Rust SDK API parity
 
+## Public image-channel codecs and shell r9 reason 13, C, 2026-10-17
+
+The C SDK now has a passive public codec for the accepted image-channel
+contract, declared in sophia_image_channel.h. It encodes and decodes the 40-byte
+Hello and 200-byte Source packets, the seven shared records from ImageBegin
+(0x7000) to ImageFormats (0x7006), and the ASCII discovery file. A separate
+check compares one discovery set, meaning discovery, limits and formats, against
+each other and against bounds the caller supplies from its role. A successful
+check yields the expected role, epoch, channel generation, source kinds and
+size bounds for packet decoding. Every refusal reports one category, and the
+first failed check in table order wins. Encoders decode what they wrote and
+return the same category, so they cannot emit bytes the decoder refuses.
+Format rows stay borrowed from the decoded record.
+
+The codec performs no I/O and holds no descriptors. It does not check seals,
+map memory, enforce budgets or decide custody, and it does not open a channel or
+advertise anything. The role codecs are unchanged. They still refuse the
+0x7000 kinds, and sophia_sf_decode and sophia_sf_encode still refuse reason 13.
+The new sophia_sf_decode_revision and sophia_sf_encode_revision take the
+negotiated shell revision. At revision 9 they admit ResourceStatus reason 13,
+image_channel_unavailable, but only with status 3 (Rejected). Every other
+status, ResourceReleased and every earlier revision keep the existing bound.
+Revisions outside 1 to 9 are argument errors. The shared reason helpers are not
+widened. The lock reason vocabulary was already open; it now names reason 9.
+
+image_channel_codec_test reads spec/golden/sophia-image-channel-v1.tsv at run
+time. All 54 cases give their expected category. Every accepted case round
+trips byte for byte, and every strict prefix and one-byte extension of it is
+refused. Further controls cover two-plane DMA-BUF shape, unused and reserved
+plane bytes, overflowed sizes, dispositions, close reasons, record direction,
+limits grant pairs, format row order and flags, the 4097-row ceiling,
+per-output and dimension bounds, and each generation in the coherence check.
+All 59 bounded source mutants were killed. The test also passes under
+clang AddressSanitizer and UndefinedBehaviorSanitizer.
+
+The Rust counterpart is t338 work in sophia-shell-client and sophia-lock-client
+and is not part of this change. Parity for these codecs is not claimed until it
+lands and the same corpus passes there. The Go oracle in Sophia still enforces
+reason 12 or lower until its own r9 change.
+
 ## Accepted image-channel contract, 2026-10-17
 
 The spec copies now include the shared shell/lock descriptor contract and its
