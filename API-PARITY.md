@@ -1,5 +1,19 @@
 # C and Rust SDK API parity
 
+## Coordinated receipt and coherence checkpoint, 2026-10-17
+
+Rust 93fe07b provides the shell r9 and lock r2 Submitted receipt entry points
+corresponding to C 21d03b8. Both preserve plain codecs and earlier revisions,
+carry ImageBegin as the actual candidate kind, and independently test legacy
+byte identity and malformed receipts. Specs declare the additional receipt
+value only at the corresponding negotiated revision.
+
+Rust now also supplies caller-context packet checks and cross-object discovery
+coherence for both roles. Rust revalidates public typed limits and formats;
+the C coherence API requires decoded inputs. Both leave narrowing after
+ChannelReady to the caller. These are codec capabilities, not channel or
+authenticated custody implementation.
+
 ## ImageBegin Submitted receipts at shell r9 and lock r2, C, 2026-10-17
 
 A Submitted record that acknowledges an accepted ImageBegin candidate names
