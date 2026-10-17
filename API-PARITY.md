@@ -1,5 +1,46 @@
 # C and Rust SDK API parity
 
+## Lock sealed-image adapter, revision 2, C, 2026-10-17
+
+The lock client now adopts the explicit selection for every caller. Before
+negotiation it decodes at the lower of the offer's maximum and 2; Negotiated
+must select a revision inside the offered range, with grants within the
+request, before any later event is decoded at the selected revision. An offer
+of revision 1 is byte-identical to before. sophia_lc_init accepts capability 2
+(sealed images) only with a maximum revision of 2 or more, and still refuses
+capability 3 (DMA-BUF).
+
+sophia_lock_image.h adds an optional adapter, mirroring the shell one. The
+caller attaches it after sophia_lc_init or sophia_lc_init_attached and before
+Negotiated arrives; the offer must span revision 2 and request capability 2.
+After a selection of 2 with a sealed grant, sophia_lc_image_dispatch reads
+image-channel, image-limits and image-formats through the client's own 9P
+wire, one set per pass, with the shell's ENOENT, back-off and formats-cap
+rules, then connects and attaches the image socket. A selection of 1, or no
+sealed grant, closes the producer as unavailable, so the byte path serves
+images when the caller allows it. The client is clockless: dispatch drives
+discovery and connect, and records routed inside sophia_lc_service use the
+producer's last time.
+
+Image events (0x7001 to 0x7004) at revision 2 are consumed and acknowledged
+by the client and routed to the producer; sophia_lc_event never returns them.
+An image event without the adapter, at selection 1, without a sealed grant,
+of another epoch or out of sequence fails the client. ResourceStatus naming a
+live offer as its transaction, for the same resource, is routed and still
+presented; status 1 is not routed, and Rejected reason 9 means unavailable.
+ImageBegin is the client's one submission, so begin is BUSY while any
+submission is in flight or awaits its ack. A refused submit, or a terminal
+client whose ImageBegin submit was never queued, refuses the offer. A submit
+possibly sent when the client ends is journal loss. Offers are not cancelled:
+ResourceCancel naming an offer is still required for full t338.
+
+ABI: struct sophia_lc_client gains a trailing image pointer, the image
+submission and whole-file-read fields, and struct sophia_lf_negotiated already
+carries selected_revision; callers must rebuild. Rust has the selection
+(8618793) but no lock image adapter yet. lock_image_test drives the adapter
+against the scripted lock peer, now shared as src/tests/lock_client_peer.h,
+and a real SEQPACKET endpoint.
+
 ## Explicit lock Negotiated selection at r2, C, 2026-10-17
 
 Lock revision 2 carries its selection on the wire. Negotiated's u16 at body
