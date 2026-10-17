@@ -321,6 +321,8 @@ static int finish_paired_submit(struct sophia_sf_client *c)
             c->submit_stage = 1; /* Failed record, not a retryable submit. */
         } else
             c->submit_stage = 2; /* Unknown unless custody was observed. */
+        if (c->pair_record_type == 7)
+            return remote_failure(c, c->pair_record_error, 1);
         return SOPHIA_9P_INVALID;
     }
     c->tx_offset = c->tx_size;
@@ -368,9 +370,13 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
         c->submit_op.active = 0;
         if (c->submit_pair) {
             c->pair_record_done = 1;
+            c->pair_record_type = r->type;
+            c->pair_record_error = r->error;
             c->pair_record_ok = r->type == 119 && r->count == c->tx_size - c->tx_offset;
             return 0;
         }
+        if (c->submit_stage == 2 && r->type == 119 && r->count == 24)
+            c->submit_accepted = 1;
         return submission_reply(c, r);
     }
     if (sf_same(&c->paired_submit_op, r->handle)) {
@@ -379,6 +385,8 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
         c->pair_reply_type = r->type;
         c->pair_reply_count = r->count;
         c->pair_reply_error = r->error;
+        if (r->type == 119 && r->count == 24)
+            c->submit_accepted = 1;
         return 0;
     }
     if (sf_same(&c->event_op, r->handle)) {
@@ -462,6 +470,8 @@ static void submission_arm(struct sophia_sf_client *c, size_t n)
     c->pair_submit_done = c->pair_failed = 0;
     c->pair_reply_type = 0;
     c->pair_reply_count = c->pair_reply_error = 0;
+    c->pair_record_type = c->submit_accepted = 0;
+    c->pair_record_error = 0;
 }
 int sf_session_queue(struct sophia_sf_client *c, const struct sophia_sf_record *value)
 {
@@ -529,7 +539,7 @@ int sophia_sf_client_submission(const struct sophia_sf_client *c, uint64_t *id,
     *id = c->next_submission - 1;
     if (!*id)
         *stage = SOPHIA_SF_SUBMISSION_NONE;
-    else if (c->submitted)
+    else if (c->submitted || (c->terminal && c->submit_accepted))
         *stage = SOPHIA_SF_SUBMISSION_CUSTODIED;
     else if (c->submit_error)
         *stage = SOPHIA_SF_SUBMISSION_REFUSED;

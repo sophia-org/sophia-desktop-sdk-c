@@ -208,7 +208,7 @@ static void submitted_in_final_read(void)
     rig_close(&r);
 }
 /* Behind an undelivered event: validated in order, never raw-scanned. */
-static void submitted_behind_event(int poison)
+static void submitted_behind_event(int poison, int accepted)
 {
     struct rig r;
     struct sophia_sf_record request = rig_request(1);
@@ -216,7 +216,7 @@ static void submitted_behind_event(int poison)
     uint8_t bad[48] = {48, 0, 0, 0, 2, 0, 18, 0, 17};
     uint64_t first;
     rig_ready(&r, &rig_config);
-    r.p.policy = P_SILENT;
+    r.p.policy = accepted ? P_SILENT : P_HOLD;
     assert(!sophia_ss_submit(&r.s, &request, 1, &first));
     rig_run(&r, 6);
     assert(r.p.submits == 2 && r.p.event_held);
@@ -233,7 +233,7 @@ static void submitted_behind_event(int poison)
     rig_step(&r);
     assert(sophia_ss_state(&r.s) == SOPHIA_SS_CLOSED);
     assert(rig_outcome(&r, first) ==
-           (poison ? SOPHIA_SS_UNKNOWN_DISCONNECTED : SOPHIA_SS_SUBMITTED));
+           (poison && !accepted ? SOPHIA_SS_UNKNOWN_DISCONNECTED : SOPHIA_SS_SUBMITTED));
     /* The undelivered event is still delivered, in order. */
     assert(!sophia_ss_event(&r.s, &e) && e->header.kind == SOPHIA_SF_ALLOCATION_RESULT);
     rig_close(&r);
@@ -624,12 +624,73 @@ static void only_final_fragment_can_pair(void)
     rig_close(&r);
 }
 
+static void accepted_pair_survives_disconnect(void)
+{
+    unsigned reuse, record_replied;
+    for (reuse = 0; reuse < 2; reuse++) {
+        for (record_replied = 0; record_replied < 2; record_replied++) {
+            struct rig r;
+            struct sophia_sf_record request = rig_request(1);
+            uint64_t ticket;
+            rig_start(&r, &rig_config);
+            r.p.reusable = (int)reuse;
+            rig_settle(&r);
+            rig_ack(&r);
+            r.p.hold_tx = 1;
+            r.p.policy = P_HOLD;
+            assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+            rig_run(&r, 12);
+            assert(r.p.tx_held && r.p.submit_held);
+            if (record_replied) {
+                peer_count(&r.p, r.p.tx_tag, r.p.tx_count);
+                r.p.tx_held = 0;
+            }
+            peer_answer_submit(&r.p, 0);
+            rig_run(&r, 2);
+            assert(rig_outcome(&r, ticket) == SOPHIA_SS_IN_FLIGHT);
+            peer_close(&r.p);
+            rig_run(&r, 2);
+            assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED);
+            rig_close(&r);
+        }
+    }
+}
+
+static void paired_record_stale_keeps_revocation_classification(void)
+{
+    unsigned reuse;
+    for (reuse = 0; reuse < 2; reuse++) {
+        struct rig r;
+        struct sophia_sf_record request = rig_request(1);
+        uint64_t ticket;
+        rig_start(&r, &rig_config);
+        r.p.reusable = (int)reuse;
+        rig_settle(&r);
+        rig_ack(&r);
+        r.p.hold_tx = 1;
+        r.p.policy = P_HOLD;
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+        rig_run(&r, 12);
+        assert(r.p.tx_held && r.p.submit_held);
+        peer_error(&r.p, r.p.tx_tag, 116);
+        r.p.tx_held = 0;
+        peer_answer_submit(&r.p, 11);
+        rig_run(&r, 12);
+        assert(sophia_ss_state(&r.s) == SOPHIA_SS_STALE);
+        assert(r.s.files.stale && r.s.files.remote_error == 116);
+        assert(rig_outcome(&r, ticket) == SOPHIA_SS_DROPPED_UNSENT);
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
     paired_record_failure();
     paired_submit_reply_before_record_reply();
     paired_failure_preserves_early_submitted();
     only_final_fragment_can_pair();
+    accepted_pair_survives_disconnect();
+    paired_record_stale_keeps_revocation_classification();
     reusable_probe_waits_for_negotiated_after_ack();
     reusable_transaction_writer();
     old_and_unissued_tickets();
@@ -641,9 +702,12 @@ int main(void)
     definitive_refusal();
     submitted_is_sticky();
     submitted_in_final_read();
-    submitted_behind_event(0);
-    submitted_behind_event(1);
-    submitted_behind_event(2);
+    submitted_behind_event(0, 0);
+    submitted_behind_event(1, 0);
+    submitted_behind_event(2, 0);
+    submitted_behind_event(0, 1);
+    submitted_behind_event(1, 1);
+    submitted_behind_event(2, 1);
     ealready();
     eagain_waits_for_progress();
     clock_rules();
