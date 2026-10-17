@@ -135,20 +135,21 @@ static void unknown_after_issued_submit(void)
     assert(!sophia_ss_poll_events(&r.s));
     rig_close(&r);
 }
-static void dropped_when_only_staged(void)
+static void unknown_with_both_write_replies_held(void)
 {
     struct rig r;
     struct sophia_sf_record request = rig_request(1);
     uint64_t first;
     rig_ready(&r, &rig_config);
     r.p.hold_tx = 1;
+    r.p.policy = P_HOLD;
     assert(!sophia_ss_submit(&r.s, &request, 1, &first));
     rig_run(&r, 6);
-    assert(r.p.tx_held && r.p.submits == 1);
+    assert(r.p.tx_held && r.p.submit_held && r.p.submits == 2);
     peer_close(&r.p);
     rig_run(&r, 2);
     assert(sophia_ss_state(&r.s) == SOPHIA_SS_CLOSED);
-    assert(rig_outcome(&r, first) == SOPHIA_SS_DROPPED_UNSENT);
+    assert(rig_outcome(&r, first) == SOPHIA_SS_UNKNOWN_DISCONNECTED);
     rig_close(&r);
 }
 static void definitive_refusal(void)
@@ -500,8 +501,135 @@ static void reusable_transaction_writer(void)
     }
 }
 
+static void paired_record_failure(void)
+{
+    static const uint32_t errors[] = {0, 11, 22, 116, 114};
+    unsigned reuse, i;
+    for (reuse = 0; reuse < 2; reuse++) {
+        for (i = 0; i < sizeof(errors) / sizeof(errors[0]); i++) {
+            struct rig r;
+            struct sophia_sf_record request = rig_request(1);
+            uint64_t ticket;
+            rig_start(&r, &rig_config);
+            r.p.reusable = (int)reuse;
+            rig_settle(&r);
+            rig_ack(&r);
+            r.p.hold_tx = 1;
+            r.p.policy = P_HOLD;
+            assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+            rig_run(&r, 12);
+            assert(r.p.tx_held && r.p.submit_held && r.p.submits == 2);
+            peer_count(&r.p, r.p.tx_tag, r.p.tx_count - 1);
+            r.p.tx_held = 0;
+            rig_run(&r, 2);
+            assert(rig_outcome(&r, ticket) == SOPHIA_SS_IN_FLIGHT);
+            peer_answer_submit(&r.p, errors[i]);
+            rig_run(&r, 12);
+            assert(sophia_ss_state(&r.s) != SOPHIA_SS_READY);
+            assert(rig_outcome(&r, ticket) ==
+                   (!errors[i] ? SOPHIA_SS_SUBMITTED : errors[i] == 114 ?
+                    SOPHIA_SS_UNKNOWN_DISCONNECTED : SOPHIA_SS_DROPPED_UNSENT));
+            assert(r.p.submits == 2); /* No retry of the incomplete record. */
+            rig_close(&r);
+        }
+    }
+}
+
+static void paired_submit_reply_before_record_reply(void)
+{
+    unsigned reuse;
+    for (reuse = 0; reuse < 2; reuse++) {
+        struct rig r;
+        struct sophia_sf_record request = rig_request(1);
+        uint64_t ticket;
+        rig_start(&r, &rig_config);
+        r.p.reusable = (int)reuse;
+        rig_settle(&r);
+        rig_ack(&r);
+        r.p.hold_tx = 1;
+        r.p.policy = P_HOLD;
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+        rig_run(&r, 12);
+        assert(r.p.tx_held && r.p.submit_held);
+        peer_answer_submit(&r.p, 0);
+        rig_run(&r, 2);
+        assert(rig_outcome(&r, ticket) == SOPHIA_SS_IN_FLIGHT);
+        peer_count(&r.p, r.p.tx_tag, r.p.tx_count);
+        r.p.tx_held = 0;
+        peer_submitted(&r.p, peer_get(r.p.last_submit + 8, 8),
+                       (uint16_t)peer_get(r.p.staged + 6, 2));
+        assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_close(&r);
+    }
+}
+
+static void paired_failure_preserves_early_submitted(void)
+{
+    unsigned reuse;
+    for (reuse = 0; reuse < 2; reuse++) {
+        struct rig r;
+        struct sophia_sf_record request = rig_request(1);
+        uint64_t ticket;
+        rig_start(&r, &rig_config);
+        r.p.reusable = (int)reuse;
+        rig_settle(&r);
+        rig_ack(&r);
+        r.p.hold_tx = 1;
+        r.p.policy = P_HOLD;
+        assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+        rig_run(&r, 12);
+        assert(r.p.tx_held && r.p.submit_held);
+        peer_error(&r.p, r.p.tx_tag, 22);
+        r.p.tx_held = 0;
+        peer_answer_submit(&r.p, 11);
+        peer_submitted(&r.p, peer_get(r.p.last_submit + 8, 8),
+                       (uint16_t)peer_get(r.p.staged + 6, 2));
+        peer_answer_events(&r.p);
+        rig_run(&r, 12);
+        assert(sophia_ss_state(&r.s) != SOPHIA_SS_READY);
+        assert(rig_outcome(&r, ticket) == SOPHIA_SS_SUBMITTED);
+        assert(r.p.submits == 2);
+        rig_close(&r);
+    }
+}
+
+static void only_final_fragment_can_pair(void)
+{
+    struct rig r;
+    struct sophia_sf_record request = rig_request(1);
+    uint64_t ticket;
+    rig_ready(&r, &rig_config);
+    rig_ack(&r);
+    rig_run(&r, 8);
+    r.s.files.iounit[1] = 64;
+    r.p.hold_tx = 1;
+    r.p.policy = P_HOLD;
+    assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+    rig_run(&r, 8);
+    assert(r.p.tx_held && r.p.tx_count == 64 && r.p.submits == 1);
+    peer_count(&r.p, r.p.tx_tag, r.p.tx_count);
+    r.p.tx_held = 0;
+    rig_run(&r, 8);
+    assert(r.p.tx_held && r.p.tx_count == 64 && r.p.submits == 1);
+    peer_count(&r.p, r.p.tx_tag, r.p.tx_count);
+    r.p.tx_held = 0;
+    rig_run(&r, 8);
+    assert(r.p.tx_held && r.p.tx_count == 32 && r.p.submit_held && r.p.submits == 2);
+    peer_count(&r.p, r.p.tx_tag, r.p.tx_count);
+    r.p.tx_held = 0;
+    peer_answer_submit(&r.p, 0);
+    peer_submitted(&r.p, peer_get(r.p.last_submit + 8, 8),
+                   (uint16_t)peer_get(r.p.staged + 6, 2));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    rig_close(&r);
+}
+
 int main(void)
 {
+    paired_record_failure();
+    paired_submit_reply_before_record_reply();
+    paired_failure_preserves_early_submitted();
+    only_final_fragment_can_pair();
     reusable_probe_waits_for_negotiated_after_ack();
     reusable_transaction_writer();
     old_and_unissued_tickets();
@@ -509,7 +637,7 @@ int main(void)
     reservation();
     reservation_is_bound_to_its_session();
     unknown_after_issued_submit();
-    dropped_when_only_staged();
+    unknown_with_both_write_replies_held();
     definitive_refusal();
     submitted_is_sticky();
     submitted_in_final_read();
