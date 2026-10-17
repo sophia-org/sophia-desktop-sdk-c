@@ -1,4 +1,4 @@
-#include "../sophia_portal_request.h"
+#include "request_internal.h"
 #include <string.h>
 enum { WALK = 1, OPEN, WRITE, CLUNK, WAIT, STATUS, READY };
 static int disjoint(const void *a, size_t an, const void *b, size_t bn) {
@@ -95,11 +95,30 @@ static int drive(struct sophia_pcr *s) {
   s->active = 1;
   return 0;
 }
+int sophia_pcr_prepare(struct sophia_pcr *s, struct sophia_9p_client *w,
+                       uint32_t root, struct sophia_pf_capture_request request,
+                       uint64_t previous_serial, uint64_t now,
+                       uint64_t deadline) {
+  struct sophia_pc capture;
+  if (request.serial <= previous_serial)
+    return SOPHIA_PCR_INVALID;
+  if (sophia_pc_init(&capture, request, now, deadline))
+    return SOPHIA_PCR_CAPTURE;
+  memset(s, 0, sizeof *s);
+  s->wire = w;
+  s->root = root;
+  s->capture = capture;
+  s->serial = request.serial;
+  s->now = now;
+  s->deadline = deadline;
+  s->fid = SOPHIA_9P_NOFID;
+  s->stage = WALK;
+  return 0;
+}
 int sophia_pcr_init(struct sophia_pcr *s, struct sophia_po *o,
                     struct sophia_pf_capture_request request,
                     uint64_t previous_serial, uint64_t now, uint64_t deadline) {
   struct sophia_9p_client *w;
-  struct sophia_pc capture;
   size_t bytes, i;
   int r;
   if (!s || !o || !sophia_po_ready(o))
@@ -108,11 +127,6 @@ int sophia_pcr_init(struct sophia_pcr *s, struct sophia_po *o,
     return SOPHIA_PCR_CLOCK;
   if (o->info.request != SOPHIA_PF_OUTPUT_CAPTURE_V1)
     return SOPHIA_PCR_UNSUPPORTED;
-  if (request.serial <= previous_serial)
-    return SOPHIA_PCR_INVALID;
-  r = sophia_pc_init(&capture, request, now, deadline);
-  if (r)
-    return SOPHIA_PCR_CAPTURE;
   w = o->wire;
   if (!w || w->terminal || w->phase != 2 || w->fid_count != 1 ||
       o->root == SOPHIA_9P_NOFID || w->fids[0] != o->root || w->rx_used ||
@@ -127,16 +141,11 @@ int sophia_pcr_init(struct sophia_pcr *s, struct sophia_po *o,
   for (i = 0; i < 2u * w->capacity; ++i)
     if (w->slots[i].state)
       return SOPHIA_PCR_INVALID;
-  memset(s, 0, sizeof *s);
+  r = sophia_pcr_prepare(s, w, o->root, request, previous_serial, now,
+                         deadline);
+  if (r)
+    return r;
   s->opening = o;
-  s->wire = w;
-  s->root = o->root;
-  s->capture = capture;
-  s->serial = request.serial;
-  s->now = now;
-  s->deadline = deadline;
-  s->fid = SOPHIA_9P_NOFID;
-  s->stage = WALK;
   sophia_po_close(o);
   r = drive(s);
   return r ? fail(s, r) : 0;
@@ -189,12 +198,7 @@ static int accept(struct sophia_pcr *s, const struct sophia_9p_reply *r) {
   }
   return 0;
 }
-int sophia_pcr_dispatch(struct sophia_pcr *s, uint64_t now, size_t budget) {
-  struct sophia_9p_reply reply;
-  unsigned rounds;
-  int r;
-  if (!s)
-    return SOPHIA_PCR_INVALID;
+int sophia_pcr_step(struct sophia_pcr *s, uint64_t now) {
   if (now < s->now)
     return SOPHIA_PCR_CLOCK;
   if (s->error)
@@ -203,10 +207,33 @@ int sophia_pcr_dispatch(struct sophia_pcr *s, uint64_t now, size_t budget) {
   if (s->stage == READY)
     return 0;
   if (sophia_pc_advance(&s->capture, now))
-    return fail(s, SOPHIA_PCR_CAPTURE);
-  r = drive(s);
+    return SOPHIA_PCR_CAPTURE;
+  return drive(s);
+}
+int sophia_pcr_accept(struct sophia_pcr *s,
+                      const struct sophia_9p_reply *reply) {
+  int r;
+  if (!s->active || reply->handle.slot != s->pending.slot ||
+      reply->handle.serial != s->pending.serial)
+    return SOPHIA_PCR_INVALID;
+  r = accept(s, reply);
+  if (!r)
+    s->active = 0;
+  return r;
+}
+int sophia_pcr_dispatch(struct sophia_pcr *s, uint64_t now, size_t budget) {
+  struct sophia_9p_reply reply;
+  unsigned rounds;
+  int r;
+  if (!s)
+    return SOPHIA_PCR_INVALID;
+  if (now < s->now)
+    return SOPHIA_PCR_CLOCK;
+  r = sophia_pcr_step(s, now);
   if (r)
     return fail(s, r);
+  if (s->stage == READY)
+    return 0;
   r = sophia_9p_service(s->wire, budget);
   if (r < 0)
     return fail(s, wire_error(s, r));
@@ -216,16 +243,12 @@ int sophia_pcr_dispatch(struct sophia_pcr *s, uint64_t now, size_t budget) {
       return 0;
     if (r)
       return fail(s, wire_error(s, r));
-    if (!s->active || reply.handle.slot != s->pending.slot ||
-        reply.handle.serial != s->pending.serial)
-      return fail(s, SOPHIA_PCR_INVALID);
-    r = accept(s, &reply);
+    r = sophia_pcr_accept(s, &reply);
     if (r)
       return fail(s, r);
     r = sophia_9p_consume(s->wire, reply.handle);
     if (r)
       return fail(s, wire_error(s, r));
-    s->active = 0;
     r = drive(s);
     if (r)
       return fail(s, r);

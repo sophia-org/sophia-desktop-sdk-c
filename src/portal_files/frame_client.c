@@ -1,4 +1,4 @@
-#include "../sophia_portal_frame.h"
+#include "frame_internal.h"
 #include <string.h>
 enum {
   WALK_INFO = 1,
@@ -110,6 +110,18 @@ static int init(struct sophia_pfr *s, struct sophia_9p_client *w, uint32_t root,
   for (i = 0; i < 2u * w->capacity; ++i)
     if (w->slots[i].state)
       return SOPHIA_PFR_INVALID;
+  if (sophia_pfr_prepare(s, w, root, image, capacity, now, deadline))
+    return SOPHIA_PFR_INVALID;
+  s->error = drive(s);
+  return s->error;
+}
+int sophia_pfr_prepare(struct sophia_pfr *s, struct sophia_9p_client *w,
+                       uint32_t root, void *image, size_t capacity,
+                       uint64_t now, uint64_t deadline) {
+  if (!image || !capacity)
+    return SOPHIA_PFR_INVALID;
+  if (deadline <= now)
+    return SOPHIA_PFR_DEADLINE;
   memset(s, 0, sizeof *s);
   s->wire = w;
   s->root = root;
@@ -119,9 +131,9 @@ static int init(struct sophia_pfr *s, struct sophia_9p_client *w, uint32_t root,
   s->deadline = deadline;
   s->stage = WALK_INFO;
   s->info_fid = s->frame_fid = SOPHIA_9P_NOFID;
-  s->error = drive(s);
-  return s->error;
+  return 0;
 }
+
 int sophia_pfr_init(struct sophia_pfr *s, struct sophia_po *o, void *image,
                     size_t capacity, uint64_t now, uint64_t deadline) {
   int r;
@@ -236,12 +248,23 @@ static int accept(struct sophia_pfr *s, const struct sophia_9p_reply *r) {
   }
   return 0;
 }
-int sophia_pfr_dispatch(struct sophia_pfr *s, uint64_t now, size_t budget) {
-  unsigned i;
-  int r;
-  struct sophia_9p_reply reply;
-  if (!s)
+int sophia_pfr_matches(const struct sophia_pfr *s,
+                       struct sophia_9p_handle tag) {
+  size_t i;
+  if (s->active && same(s->pending, tag))
+    return 1;
+  for (i = 0; i < 4; ++i)
+    if (s->reads[i].active && same(s->reads[i].handle, tag))
+      return 1;
+  return 0;
+}
+int sophia_pfr_accept(struct sophia_pfr *s,
+                      const struct sophia_9p_reply *reply) {
+  if (!sophia_pfr_matches(s, reply->handle))
     return SOPHIA_PFR_INVALID;
+  return accept(s, reply);
+}
+int sophia_pfr_step(struct sophia_pfr *s, uint64_t now) {
   if (now < s->now)
     return SOPHIA_PFR_CLOCK;
   if (s->error)
@@ -250,7 +273,22 @@ int sophia_pfr_dispatch(struct sophia_pfr *s, uint64_t now, size_t budget) {
   if (s->stage == READY)
     return 0;
   if (now >= s->deadline)
-    return s->error = SOPHIA_PFR_DEADLINE;
+    return SOPHIA_PFR_DEADLINE;
+  return drive(s);
+}
+int sophia_pfr_dispatch(struct sophia_pfr *s, uint64_t now, size_t budget) {
+  unsigned i;
+  int r;
+  struct sophia_9p_reply reply;
+  if (!s)
+    return SOPHIA_PFR_INVALID;
+  if (now < s->now)
+    return SOPHIA_PFR_CLOCK;
+  r = sophia_pfr_step(s, now);
+  if (r)
+    return s->error = r;
+  if (s->stage == READY)
+    return 0;
   r = sophia_9p_service(s->wire, budget);
   if (r < 0)
     return s->error = wire_error(s, r);
@@ -260,7 +298,7 @@ int sophia_pfr_dispatch(struct sophia_pfr *s, uint64_t now, size_t budget) {
       return 0;
     if (r)
       return s->error = wire_error(s, r);
-    r = accept(s, &reply);
+    r = sophia_pfr_accept(s, &reply);
     if (r)
       return s->error = r;
     r = sophia_9p_consume(s->wire, reply.handle);

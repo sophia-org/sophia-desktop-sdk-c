@@ -11,6 +11,7 @@ CPPFLAGS += -Isrc
 
 NINE_P = $(sort $(wildcard src/nine_p/*.c))
 ADMIN_FILES = $(sort $(wildcard src/admin_files/*.c))
+BROKER_FILES = $(sort $(wildcard src/broker_files/*.c))
 PORTAL_FILES = $(sort $(wildcard src/portal_files/*.c))
 FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c src/wm_files/*.c src/wm_session/*.c src/output_files/*.c src/output_session/*.c src/lock_files/*.c src/launch_auth/*.c src/namespace/*.c)) src/desktop_connection.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
@@ -20,13 +21,18 @@ PACKAGES = sophia-9p sophia-desktop
 .PHONY: all check check-files check-spec check-generator install clean
 all: $(LIBRARIES) $(addprefix $(BUILD)/,$(addsuffix .pc,$(PACKAGES)))
 
+.PHONY: check-binding
+check-binding: $(LIBRARIES)
+	nim c --hints:off --warnings:on --nimcache:$(BUILD)/nim-binding --out:$(BUILD)/requester_binding_smoke --passC:-I$(CURDIR)/src --passL:$(CURDIR)/$(BUILD)/libsophia-desktop.a --passL:$(CURDIR)/$(BUILD)/libsophia-9p.a src/tests/requester_binding_smoke.nim
+	$(BUILD)/requester_binding_smoke
+
 $(BUILD)/src/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/libsophia-9p.a: $(call objects,$(NINE_P))
 	$(AR) rcs $@ $^
-$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES) $(PORTAL_FILES))
+$(BUILD)/libsophia-desktop.a: $(call objects,$(FILES) $(ADMIN_FILES) $(PORTAL_FILES) $(BROKER_FILES))
 	$(AR) rcs $@ $^
 $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
@@ -34,6 +40,12 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 
 FILE_TESTS = shell_session_attached_test sophia_9p_client_test launch_auth_test sophia_shell_files_test sophia_shell_files_roles_test sophia_shell_files_descriptors_test sophia_shell_files_descriptor_candidates_test sophia_shell_files_descriptor_objects_test sophia_shell_files_staging_test desktop_connection_test shell_session_custody_test shell_session_events_test shell_session_descriptors_test shell_session_staging_test native_session_test wm_files_test wm_session_test output_files_test output_session_test lock_files_test lock_client_test
 FILE_TESTS += namespace_test
+FILE_TESTS += broker_discovery_test
+FILE_TESTS += broker_events_test
+FILE_TESTS += broker_responses_test
+FILE_TESTS += broker_controls_test
+FILE_TESTS += broker_submission_test
+FILE_TESTS += broker_journal_test broker_startup_test broker_transaction_test broker_phase_test broker_session_test
 FILE_TESTS += admin_files_test
 FILE_TESTS += admin_invocation_test
 FILE_TESTS += admin_status_test
@@ -55,6 +67,15 @@ FILE_TESTS += portal_request_test
 FILE_TESTS += portal_transfer_test
 FILE_TESTS += portal_watch_test
 FILE_TESTS += portal_session_test
+FILE_TESTS += portal_session_capture_test
+FILE_TESTS += portal_session_frame_test
+FILE_TESTS += portal_requester_records_test
+FILE_TESTS += portal_requester_state_test
+FILE_TESTS += portal_requester_startup_test
+FILE_TESTS += portal_requester_transaction_test
+FILE_TESTS += portal_requester_session_test
+FILE_TESTS += portal_requester_transfer_test
+FILE_TESTS += portal_requester_upload_test
 ifeq ($(shell uname -s),Linux)
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
@@ -64,6 +85,12 @@ check-files: $(addprefix $(BUILD)/,$(FILE_TESTS))
 	@set -e; for test in $^; do "$$test"; done
 
 # Explicit conformance peer: run only under Sophia's protected launch fixture.
+$(BUILD)/broker_peer: src/tests/broker_peer.c $(LIBRARIES)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
+
+$(BUILD)/requester_peer: src/tests/requester_peer.c $(LIBRARIES)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
+
 $(BUILD)/portal_authenticated_peer: src/tests/portal_authenticated_peer.c $(LIBRARIES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
 

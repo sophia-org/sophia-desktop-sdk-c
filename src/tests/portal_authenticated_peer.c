@@ -39,7 +39,10 @@ int main(void) {
   int transfer_mode = !strncmp(mode, "sdk-transfer", 12);
   int watch_mode = !strncmp(mode, "sdk-watch", 9);
   int session_mode = !strncmp(mode, "sdk-session", 11);
-  int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode;
+  int session_capture = !strcmp(mode, "sdk-session-capture");
+  int session_frame = !strcmp(mode, "sdk-session-frame");
+  int frame_mode = !strncmp(mode, "sdk-frame", 9) || request_mode ||
+                   session_capture || session_frame;
   int revoke = !strcmp(mode, "sdk-frame-revoke"), paused = 0;
   assert(names && a && b);
   dir = sophia_ns_open(getenv(SOPHIA_NS_DIRECTORY_ENV), names);
@@ -166,15 +169,20 @@ int main(void) {
   }
   if (session_mode) {
     struct sophia_pcs session;
-    unsigned char status_bytes[43], *storage = malloc(65536);
+    size_t capacity = session_frame ? 256 * 128 * 4 : 65536;
+    unsigned char status_bytes[43], *storage = malloc(capacity);
+    struct sophia_pf_frame_info info;
+    int frame_cancelled = 0;
     const void *result;
     size_t length, i;
     enum sophia_pcs_event event;
+    enum sophia_pf_capture_state outcome;
+    uint64_t serial;
     uint32_t remote;
     int phase = 0, cancel = !strcmp(mode, "sdk-session-cancel");
     uint64_t expires = now() + 3000;
     assert(storage);
-    memset(storage, 0xa5, 65536);
+    memset(storage, 0xa5, capacity);
     assert(!sophia_pcs_init(&session, &opening));
     assert(!sophia_pcs_watch(&session, expires));
     assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_STATUS, status_bytes,
@@ -190,7 +198,10 @@ int main(void) {
                                       : (int)(wake > t ? wake - t : 0)) >= 0);
       assert(!sophia_pcs_dispatch(&session, now(), 65536));
       if (!phase && sophia_pcs_snapshot_result(&session, &result, &length)) {
-        const char *expected = "request=unavailable transfer=ready\n";
+        const char *expected =
+            session_capture || session_frame
+                ? "request=output-capture-v1 transfer=ready\n"
+                : "request=unavailable transfer=ready\n";
         assert(length == strlen(expected) && !memcmp(result, expected, length));
         assert(sophia_pcs_watch_waiting(&session) &&
                !sophia_pcs_watch_event(&session, &event, &remote));
@@ -210,22 +221,51 @@ int main(void) {
           assert(now() < deadline);
           nanosleep(&delay, NULL);
         }
-        assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_TRANSFER, storage,
-                                    65536, expires));
+        if (session_frame) {
+          assert(!sophia_pcs_frame(&session, storage, capacity, expires));
+        } else if (session_capture) {
+          struct sophia_pf_capture_request request = {2, 7};
+          assert(!sophia_pcs_capture(&session, request, 1, expires));
+        } else {
+          assert(!sophia_pcs_snapshot(&session, SOPHIA_PS_TRANSFER, storage,
+                                      65536, expires));
+        }
         if (cancel)
           assert(!sophia_pcs_cancel_watch(&session));
         phase = 1;
       }
+      if (session_frame && !frame_cancelled &&
+          sophia_pcs_frame_received(&session)) {
+        assert(!sophia_pcs_frame_result(&session, &info, &result, &length));
+        assert(!sophia_pcs_cancel_watch(&session));
+        frame_cancelled = 1;
+      }
       if (phase && sophia_pcs_watch_event(&session, &event, &remote) &&
-          sophia_pcs_snapshot_result(&session, &result, &length))
+          (session_frame
+               ? sophia_pcs_frame_result(&session, &info, &result, &length)
+           : session_capture
+               ? sophia_pcs_capture_result(&session, &outcome, &serial)
+               : sophia_pcs_snapshot_result(&session, &result, &length)))
         break;
     }
-    assert(event == (cancel ? SOPHIA_PCS_CANCELLED : SOPHIA_PCS_REVOKED));
-    assert(result == storage && length == 7 && !memcmp(result, "granted", 7));
-    for (i = length; i < 65536; ++i)
-      assert(storage[i] == 0xa5);
-    assert(!sophia_pcs_release_watch(&session) &&
-           !sophia_pcs_release_snapshot(&session));
+    assert(event == (cancel || session_frame ? SOPHIA_PCS_CANCELLED
+                                             : SOPHIA_PCS_REVOKED));
+    if (session_frame) {
+      assert(frame_cancelled && result == storage && length == capacity &&
+             info.image_bytes == capacity);
+      for (i = 0; i < length; ++i)
+        assert(storage[i] == 17);
+      assert(!sophia_pcs_release_frame(&session));
+    } else if (session_capture) {
+      assert(outcome == SOPHIA_PF_READY && serial == 2);
+      assert(!sophia_pcs_release_capture(&session));
+    } else {
+      assert(result == storage && length == 7 && !memcmp(result, "granted", 7));
+      for (i = length; i < 65536; ++i)
+        assert(storage[i] == 0xa5);
+      assert(!sophia_pcs_release_snapshot(&session));
+    }
+    assert(!sophia_pcs_release_watch(&session));
     assert(!sophia_pcs_finish(&session) && sophia_po_ready(&opening) &&
            role.fid_count == 1);
     free(storage);
