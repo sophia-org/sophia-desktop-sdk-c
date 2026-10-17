@@ -106,9 +106,12 @@ static int read_next(struct sophia_ss_image *img)
     void *buf = img->file == 1 ? (void *)img->text
                 : img->file == 2 ? (void *)img->limits
                                  : img->config.formats;
+    /* Larger caller storage never widens the formats object's budget. */
     size_t cap = img->file == 1 ? sizeof(img->text)
                  : img->file == 2 ? sizeof(img->limits)
-                                  : img->config.formats_capacity;
+                 : img->config.formats_capacity < SOPHIA_IC_MAX_FORMATS_BYTES
+                     ? img->config.formats_capacity
+                     : SOPHIA_IC_MAX_FORMATS_BYTES;
     return sf_session_file_read(c, files[img->file - 1], buf, cap);
 }
 

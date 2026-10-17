@@ -37,6 +37,8 @@ wire, one complete set per pass, hands the set to the producer, connects the
 discovered endpoint beneath the caller's endpoint directory and attaches it.
 Discovery and connect retries use the session's EAGAIN policy (4 ms doubling
 to 256 ms) inside the producer's startup deadline.
+The image-formats read is capped at the contract's 64 + 40 * 4096 bytes even
+when the caller's storage is larger, so a longer file is a discovery error.
 
 At r9 the session decodes journal records with the revision 9 codec. Image
 events (ImageAdmitted, SourceReleased, ChannelReady, ChannelClosed) are

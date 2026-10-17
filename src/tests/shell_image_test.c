@@ -711,6 +711,27 @@ static void contradictions(void)
     assert(sophia_ip_cause(sophia_ss_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
     assert(t.img.limits_used == 0);
     image_close(&t);
+    /* Formats storage larger than the contract's object budget reads no
+     * more than that budget, and an over-long formats file is refused. */
+    image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
+    {
+        static uint8_t wide[SOPHIA_IC_MAX_FORMATS_BYTES + 64], served[SOPHIA_IC_MAX_FORMATS_BYTES + 1];
+        memset(wide, 0xa5, sizeof(wide));
+        memcpy(served, t.set.formats, t.set.formats_bytes);
+        t.img.config.formats = wide;
+        t.img.config.formats_capacity = sizeof(wide);
+        t.r.p.image_data[2] = served;
+        t.r.p.image_bytes[2] = sizeof(served);
+        rig_settle(&t.r);
+        for (i = 0; i < 256 && sophia_ip_cause(sophia_ss_image_producer(&t.img)) !=
+                                   SOPHIA_IPX_DISCOVERY; i++)
+            image_step(&t);
+        assert(sophia_ip_cause(sophia_ss_image_producer(&t.img)) == SOPHIA_IPX_DISCOVERY);
+        for (i = SOPHIA_IC_MAX_FORMATS_BYTES; i < sizeof(wide); i++)
+            assert(wide[i] == 0xa5);
+        assert(t.img.formats_used == 0);
+    }
+    image_close(&t);
     /* Image bits below r9 fail the welcome. */
     image_start(&t, 1, SOPHIA_IC_KIND_BIT_SEALED);
     t.welcome.selected_revision = 8;
