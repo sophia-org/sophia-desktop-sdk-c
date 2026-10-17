@@ -1,5 +1,39 @@
 # C and Rust SDK API parity
 
+## Shell sealed-image adapter, BAR at revision 9, C, 2026-10-17
+
+sophia_shell_image.h adds an optional adapter that joins a BAR shell session
+to the image producer. The caller attaches it after sophia_ss_open_* and
+before negotiation completes. The session offer must span revision 9,
+require capability bit 13 and not request bit 14; DMA-BUF is never
+requested. After an r9 welcome with sealed images, the adapter reads
+image-channel, image-limits and image-formats through the session's own 9P
+wire, one complete set per pass, hands the set to the producer, connects the
+discovered endpoint beneath the caller's endpoint directory and attaches it.
+Discovery and connect retries use the session's EAGAIN policy (4 ms doubling
+to 256 ms) inside the producer's startup deadline.
+
+At r9 the session decodes journal records with the revision 9 codec. Image
+events (ImageAdmitted, SourceReleased, ChannelReady, ChannelClosed) are
+consumed by the session and routed to the producer; sophia_ss_event never
+returns them, including after the session ends. A ResourceStatus whose
+transaction names a live image offer for the same resource is routed once
+and still delivered to the application; status 1 is not routed. ImageBegin
+is queued as an ordinary candidate with its own ticket, after queue room is
+checked so the caller keeps its descriptor on BUSY. A refused or unsent
+ImageBegin is a definitive pre-admission refusal; a session end with offers
+in custody is journal loss. With the adapter attached, a welcome granting
+image bits below r9 fails the session; an unattached session still fails on
+any image event.
+
+ABI: struct sophia_ss gains a trailing `struct sophia_ss_image *image`
+pointer, and struct sophia_sf_client gains image-mode and whole-file-read
+fields at its end. Both are caller-allocated public layouts, so callers must
+rebuild against this header. With no adapter attached every path is
+byte-identical to before. Launcher, dock and descriptor profiles are not yet
+covered; the lock adapter follows separately. shell_image_test drives the
+adapter against the scripted 9P shell peer and a real SEQPACKET endpoint.
+
 ## Clockless image-channel producer, C, 2026-10-17
 
 sophia_image_producer.h adds the producer side of the image side channel
