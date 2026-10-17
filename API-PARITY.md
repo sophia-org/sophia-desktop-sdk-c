@@ -1036,6 +1036,12 @@ with retained uncertainty and no automatic retry.
 
 ## B3 upload window (working candidate)
 
+Zero and oversized pixel Rwrite counts fail the connection in both SDKs without
+resending. Rust retains Unknown custody for an issued unit whose invalid reply
+establishes no accepted prefix; an oversized count cannot establish Stored on
+terminal cleanup. Independent regression tests cover both invalid counts. C's
+borrowed-buffer API exposes terminal failure rather than per-chunk custody.
+
 The shell client queues up to four writes from one borrowed, multi-chunk buffer,
 splitting at canonical boundaries, msize and iounit. Replies match by handle and
 settle in issue order. Short writes drain the invalidated tail and resume at the

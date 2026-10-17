@@ -192,6 +192,22 @@ static void explicit_retry_and_backoff(void)
     rig_close(&r);
 }
 
+static void invalid_write_counts(void)
+{
+    unsigned counts[] = {0, 5};
+    unsigned i;
+    for (i = 0; i < 2; i++) {
+        struct rig r;
+        uint8_t pixels[16] = {0};
+        start(&r, pixels, sizeof(pixels));
+        peer_count(&r.p, r.p.upload_tags[0], counts[i]);
+        rig_run(&r, 4);
+        assert(r.s.state == SOPHIA_SS_FAILED);
+        assert(r.p.upload_held == 4 && !r.s.files.upload_offset);
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
     ordered_success();
@@ -201,6 +217,7 @@ int main(void)
     bad_tail_and_fence(0);
     bad_tail_and_fence(1);
     explicit_retry_and_backoff();
+    invalid_write_counts();
     puts("shell upload window: ordered credit, short recovery, idle wake and fencing: ok");
     return 0;
 }
