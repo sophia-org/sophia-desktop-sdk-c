@@ -51,6 +51,48 @@ descriptor_kernel_test; Rust runs sophia-shell-client's descriptor_kernel test.
 The draft custody matrix remains to be implemented independently in both SDKs.
 No public ABI or vendored contract changes are part of this fixture slice.
 
+## Proposed image-channel lifecycle and custody fixture, C peer, 2026-10-17
+
+The C SDK now carries an independent peer for the sixteen-case custody matrix in
+Sophia's proposed x6jp929h design. It was written by a different author from the
+Rust peer in sophia-shell-client and shares no code or codec with it. Two test
+programs, descriptor_lifecycle_test and descriptor_custody_test, run in the
+Linux check-files target. They cover optional discovery, snapshot replacement,
+readiness, duplicate channels and bad Hello, offer IDs, source send, ambiguous
+send, kernel seals, ancillary ownership, the expiry race, cancellation in three
+phases, channel loss, journal loss, 9P epoch end, capacity and sealed backing.
+
+The fixture holds two separate state machines, an owner standing in for Sophia
+and a producer standing in for an SDK client. Source and Hello packets cross a
+real SEQPACKET pair with real SCM_RIGHTS references to real sealed memfds, and
+received descriptors are checked for close-on-exec and counted back to the FD
+baseline. Discovery text is parsed strictly and the limits and formats objects
+are compared by their draft offsets. Journal events are structured values passed
+in process, not encoded records; their bytes are covered by
+descriptor_draft_codec_test. Both models are clockless: the caller supplies time
+and its own drive-pass identity, and the producer exposes writable interest and
+its next deadline. Discovery reads at most one complete set per caller pass, the
+first included, which is the stricter of the two readings of the draft.
+Admission reserves the offer slot, two terminal journal slots, the declared
+sealed backing bytes and a backing slot together; acceptance moves that charge
+into the retained backing instead of duplicating it. Epoch end retires every
+backing, so an unleased one is unmapped at once and a leased one lives until its
+last consumer lease ends, with no event on the dead journal. A Source whose
+metadata differs from the admitted record faults the channel.
+
+The owner model is not an authenticated endpoint. Its credential check compares
+SO_PEERCRED with the test process and proves nothing about supervised launch.
+GPU custody is a fake completion signal that tests transitions only; it cannot
+prove that GPU reads ended, safe rollback or quarantine cleanup. Validation
+units run synchronously, so cancelling between them may unmap at once; that is
+not evidence about cancelling an in-flight worker. No public ABI,
+library code or vendored contract changes are part of this slice.
+
+Both programs also pass under clang AddressSanitizer, LeakSanitizer and UBSan.
+Twenty-four mutants of the model, each breaking one named custody rule in a separate
+source copy under a hard timeout, all fail a named assertion in the case that
+covers that rule.
+
 ## Queued shell submit (B2), 2026-10-17
 
 Review follow-up: both SDKs retain a full successful submit reply as authoritative
