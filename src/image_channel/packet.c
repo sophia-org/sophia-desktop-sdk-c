@@ -125,7 +125,8 @@ static enum sophia_ic_refusal planes(const uint8_t *p, struct sophia_ic_packet *
     }
     for (i = 0; i < m->plane_count; i++) {
         const struct sophia_ic_plane *pl = &out->planes[i];
-        if (pl->fd_index != i || !pl->stride)
+        /* DMA-BUF offsets and strides belong to the import validator. */
+        if (pl->fd_index != i)
             return SOPHIA_IC_PLANE_LAYOUT;
         if (m->source_kind == SOPHIA_IC_SOURCE_SEALED && (pl->offset || pl->stride != m->stride))
             return SOPHIA_IC_PLANE_LAYOUT;

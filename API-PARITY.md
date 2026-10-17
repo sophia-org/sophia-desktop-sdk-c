@@ -9,10 +9,14 @@ Hello and 200-byte Source packets, the seven shared records from ImageBegin
 check compares one discovery set, meaning discovery, limits and formats, against
 each other and against bounds the caller supplies from its role. A successful
 check yields the expected role, epoch, channel generation, source kinds and
-size bounds for packet decoding. Every refusal reports one category, and the
-first failed check in table order wins. Encoders decode what they wrote and
-return the same category, so they cannot emit bytes the decoder refuses.
-Format rows stay borrowed from the decoded record.
+size bounds for packet decoding. Validation runs in a fixed order and each
+refusal reports the first failed check, preserving the corpus categories. That
+order is not the contract's field-table order. Encoders decode what they wrote
+and return the same category, so they cannot emit bytes the decoder refuses.
+Format rows are the one borrowed view: they point into the caller's input
+buffer, which must stay alive and unchanged while the view is used. Packet and discovery results are owned
+copies. DMA-BUF plane offsets and strides are left to the import validator;
+the codec checks only descriptor order and reserved bytes for those rows.
 
 The codec performs no I/O and holds no descriptors. It does not check seals,
 map memory, enforce budgets or decide custody, and it does not open a channel or

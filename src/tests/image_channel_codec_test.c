@@ -285,8 +285,10 @@ static void dmabuf_shape(void)
     assert(sophia_ic_packet_decode(b, sizeof b, 1, &e, &p) == SOPHIA_IC_FD_COUNT);
     planes[1].fd_index = 0;
     assert(sophia_ic_source_encode(b, &e, &m, planes) == SOPHIA_IC_PLANE_LAYOUT);
+    /* Zero DMA-BUF plane stride is wire-valid. No import acceptance is
+     * implied; checked import validation judges it. */
     planes[1].fd_index = 1, planes[1].stride = 0;
-    assert(sophia_ic_source_encode(b, &e, &m, planes) == SOPHIA_IC_PLANE_LAYOUT);
+    assert(sophia_ic_source_encode(b, &e, &m, planes) == SOPHIA_IC_OK);
     planes[1].stride = 8, m.stride = 8;
     assert(sophia_ic_source_encode(b, &e, &m, planes) == SOPHIA_IC_STRIDE);
     m.stride = 0, m.plane_count = m.descriptor_count = 5;
@@ -483,6 +485,12 @@ static void discovery_controls(void)
     assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_OK);
     memcpy(at + 9, "../image.s", 10);
     assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_ENDPOINT);
+    assert(sophia_ic_discovery_decode(NULL, 0, &d) == SOPHIA_IC_ARGUMENT);
+    assert(sophia_ic_record_decode(NULL, 0, &shell.limits) == SOPHIA_IC_ARGUMENT);
+    assert(sophia_ic_record_decode(NULL, 136, &shell.limits) == SOPHIA_IC_ARGUMENT);
+    assert(sophia_ic_discovery_decode(NULL, v->count, &d) == SOPHIA_IC_ARGUMENT);
+    assert(sophia_ic_discovery_decode(v->bytes, v->count, NULL) == SOPHIA_IC_ARGUMENT);
+    assert(sophia_ic_discovery_decode(v->bytes, 0, &d) == SOPHIA_IC_DISCOVERY_FIELDS);
     assert(sophia_ic_discovery_decode(v->bytes, v->count, &d) == SOPHIA_IC_OK);
     assert(!strcmp(d.endpoint, "image.sock") && d.max_offers == 4 && d.formats_generation == 9);
 }

@@ -94,7 +94,7 @@ static void store(struct sophia_ic_discovery *d, size_t i, uint64_t v)
 enum sophia_ic_refusal sophia_ic_discovery_decode(const void *src, size_t n,
                                                   struct sophia_ic_discovery *out)
 {
-    const uint8_t *p = src, *at, *end = (const uint8_t *)src + n;
+    const uint8_t *p = src, *at, *end;
     struct sophia_ic_discovery d;
     size_t i, header = sizeof HEADER_LINE - 1;
     if (!src || !out)
@@ -105,6 +105,7 @@ enum sophia_ic_refusal sophia_ic_discovery_decode(const void *src, size_t n,
     if (memcmp(p, HEADER_LINE, header))
         return SOPHIA_IC_VERSION;
     at = p + header;
+    end = p + n;
     for (i = 0; i < FIELD_COUNT; i++) {
         const uint8_t *line_end = memchr(at, '\n', (size_t)(end - at)), *value;
         size_t key = strlen(fields[i].key), length;

@@ -55,8 +55,9 @@ enum sophia_ic_close_reason {
 #define SOPHIA_IC_FORMAT_OPAQUE 1u
 #define SOPHIA_IC_FORMAT_VALIDATED 2u
 
-/* Refusal categories. The first failed check wins, in the order the
- * contract tables list fields. SOPHIA_IC_OK is zero. */
+/* Refusal categories. Validation runs in a fixed order and reports the
+ * first failed check, preserving the corpus categories. The order is not the
+ * contract's field-table order. SOPHIA_IC_OK is zero. */
 enum sophia_ic_refusal {
     SOPHIA_IC_OK = 0,
     SOPHIA_IC_LENGTH,
@@ -170,7 +171,11 @@ struct sophia_ic_format_row {
     uint64_t modifier;
     uint32_t max_width, max_height;
 };
-/* rows borrows the decoded record; read entries with sophia_ic_format_row_at. */
+/* rows points into the input buffer given to sophia_ic_record_decode, not
+ * into the decoded struct. That buffer must stay alive and unchanged for
+ * every use of this view.
+ * sophia_ic_format_row_at copies one bounds-checked row out. Packet and
+ * discovery results are owned copies. */
 struct sophia_ic_formats {
     uint64_t channel_generation, formats_generation, limits_generation;
     uint32_t row_count;
