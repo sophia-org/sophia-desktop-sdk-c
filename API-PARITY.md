@@ -1,5 +1,28 @@
 # C and Rust SDK API parity
 
+## ImageBegin Submitted receipts at shell r9 and lock r2, C, 2026-10-17
+
+A Submitted record that acknowledges an accepted ImageBegin candidate names
+the real kind, 0x7000. The C codecs carry it only through the explicit
+revision entry points: sophia_sf_decode_revision and sophia_sf_encode_revision
+at shell revision 9, and the new sophia_lf_decode_revision and
+sophia_lf_encode_revision at lock revision 2. Both validate the record with
+the legacy codec and one legal stand-in kind, then restore 0x7000, so every
+other Submitted rule is unchanged: nonzero submission, zero reserved bytes,
+event identity and the exact 48-byte length. sophia_sf_decode/encode and
+sophia_lf_decode/encode, and every earlier revision, still refuse 0x7000.
+The other image kinds and values outside the legacy range stay refused at
+every revision. Lock r2 changes nothing else here: Negotiated still carries
+revision 1, and the lock _revision entry points accept revisions 1 and 2.
+
+This is C only. The matching Rust entry points are recorded with their own
+change. Selecting a revision in these calls advertises nothing; no session
+offers shell r9 or lock r2, and no channel exists. image_receipt_test covers
+both roles: legacy kinds byte-identical through every entry point, refusal
+below the receipt revision, the other image kinds and out-of-range neighbors,
+reserved, identity and over-length variants, and other 48-byte records with
+0x7000 at the same offset.
+
 ## Coordinated image codec and KDL checkpoint, 2026-10-17
 
 Both SDK spec copies now declare the seven image kinds with explicit classes.
