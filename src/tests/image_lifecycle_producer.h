@@ -178,6 +178,7 @@ FX int producer_send(struct producer *p, uint64_t id, int indeterminate) {
       f->state == P_UNKNOWN || f->state == P_EXPIRED)
     return -EALREADY;
   if (f->state != P_ADMITTED) return -EINVAL;
+  if (p->channel != PC_READY || !p->journal_alive) return -ENODEV; /* closed: never send */
   source_encode(b, p->epoch, p->gen, f->meta);
   got = p->send(p->sock, b, sizeof(b), &f->fd, 1);
   p->sends++;

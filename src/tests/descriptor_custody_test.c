@@ -239,10 +239,20 @@ static void channel_loss(void) {
     assert(count_events(&o, EV_RELEASED, received) == 0); /* custody stays separate */
     while (owner_work(&o, 1)) {}
     assert(count_events(&o, EV_STATUS, received) == 1);
+    { /* ChannelClosed arrives first; the admitted offer, not yet released,
+         is never sent after it. */
+      struct event e;
+      unsigned sends = p.sends;
+      assert(owner_take(&o, &e) && e.kind == EV_CLOSED);
+      producer_event(&p, &e);
+      assert(producer_find(&p, waiting)->state == P_ADMITTED);
+      assert(producer_send(&p, waiting, 0) == -ENODEV && p.sends == sends);
+    }
     producer_pump(&p, &o);
     assert(producer_find(&p, waiting)->disposition == DISP_CANCELLED);
     assert(producer_find(&p, received)->status == ST_ACCEPTED);
     assert(p.channel == PC_CLOSED);
+
     assert(producer_path(&p) == (fallback ? PATH_BYTES : PATH_ERROR));
     img = image_for(&o, 42, 64, 64);
     img.offer = 99;
@@ -251,8 +261,8 @@ static void channel_loss(void) {
       meta_encode(meta, &img);
       assert(owner_begin(&o, meta, 0) == B_UNAVAILABLE);
     }
-    assert(o.journal.count == 1 && o.journal.events[o.journal.head].reason ==
-                                       REASON_CHANNEL_UNAVAILABLE);
+    assert(o.journal.count == 1); /* draft reasons: shell 13, lock 9 */
+    assert(o.journal.events[o.journal.head].reason == (fixture_role == ROLE_SHELL ? 13u : 9u));
     assert(owner_byte_submit(&o) == 0 && o.byte_submits == 1);
     close(fd);
     owner_end_epoch(&o);
@@ -484,6 +494,25 @@ static void sealed_backing(void) {
     producer_pump(&p, &o);
     assert(p.settles == 2 && producer_may_reuse(&p, other));
   }
+  { /* A full live journal defers ResourceReleased; it is recorded exactly
+       once when room returns, and the backing keeps its charge until then. */
+    uint64_t r = admit(&o, &p, 50, fd, 0);
+    struct event e;
+    unsigned seen = 0;
+    assert(producer_send(&p, r, 0) == 0 && owner_receive(&o) == RX_RECEIVED);
+    while (owner_work(&o, 4)) {}
+    o.journal.capacity = o.journal.count + o.journal.reserved; /* no free slot */
+    owner_retire(&o, 50);
+    assert(count_events(&o, EV_RES_RELEASED, 50) == 0);
+    assert(owner_backing(&o, 50) && o.backing_charge == 64 * 64 * 4);
+    while (owner_take(&o, &e)) {
+      seen += e.kind == EV_RES_RELEASED && e.id == 50;
+      producer_event(&p, &e);
+    }
+    assert(seen == 1 && !owner_backing(&o, 50) && o.backing_charge == 0);
+    o.journal.capacity = 64;
+    producer_forget(&p, r);
+  }
   /* A second Source while the offer is still live is a protocol fault. */
   second = admit(&o, &p, 41, fd, 0);
   assert(raw_source(sock, producer_find(&p, second)->meta, &fd, 1) == SOURCE_BYTES);
@@ -497,16 +526,18 @@ static void sealed_backing(void) {
 
 int main(void) {
   unsigned before = fd_count();
-  kernel_seals();
-  ancillary_ownership();
-  expiry_race();
-  cancellation();
-  channel_loss();
-  journal_loss();
-  epoch_end();
-  capacity();
-  sealed_backing();
-  assert(fd_count() == before);
-  puts("descriptor custody fixture: 9 cases passed");
+  for (fixture_role = ROLE_SHELL; fixture_role <= ROLE_LOCK; fixture_role++) {
+    kernel_seals();
+    ancillary_ownership();
+    expiry_race();
+    cancellation();
+    channel_loss();
+    journal_loss();
+    epoch_end();
+    capacity();
+    sealed_backing();
+    assert(fd_count() == before);
+  }
+  puts("descriptor custody fixture: 9 cases passed for shell and lock roles");
   return 0;
 }

@@ -61,6 +61,8 @@ Linux check-files target. They cover optional discovery, snapshot replacement,
 readiness, duplicate channels and bad Hello, offer IDs, source send, ambiguous
 send, kernel seals, ancillary ownership, the expiry race, cancellation in three
 phases, channel loss, journal loss, 9P epoch end, capacity and sealed backing.
+Every case runs once for the shell role and once for the lock role, including
+the role-specific channel-unavailable reason, shell 13 and lock 9.
 
 The fixture holds two separate state machines, an owner standing in for Sophia
 and a producer standing in for an SDK client. Source and Hello packets cross a
@@ -78,7 +80,10 @@ sealed backing bytes and a backing slot together; acceptance moves that charge
 into the retained backing instead of duplicating it. Epoch end retires every
 backing, so an unleased one is unmapped at once and a leased one lives until its
 last consumer lease ends, with no event on the dead journal. A Source whose
-metadata differs from the admitted record faults the channel.
+metadata differs from the admitted record faults the channel. A producer never
+sends after ChannelClosed, even for an offer still awaiting its release. On a
+live journal with no free slot, a retired and unleased backing keeps its slot
+and charge until ResourceReleased can be recorded, then records it exactly once.
 
 The owner model is not an authenticated endpoint. Its credential check compares
 SO_PEERCRED with the test process and proves nothing about supervised launch.
@@ -89,7 +94,7 @@ not evidence about cancelling an in-flight worker. No public ABI,
 library code or vendored contract changes are part of this slice.
 
 Both programs also pass under clang AddressSanitizer, LeakSanitizer and UBSan.
-Twenty-four mutants of the model, each breaking one named custody rule in a separate
+Twenty-seven mutants of the model, each breaking one named custody rule in a separate
 source copy under a hard timeout, all fail a named assertion in the case that
 covers that rule.
 

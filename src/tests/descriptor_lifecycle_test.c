@@ -313,14 +313,16 @@ static void ambiguous_send(void) {
 
 int main(void) {
   unsigned before = fd_count();
-  optional_discovery();
-  snapshot_replacement();
-  readiness_race();
-  duplicate_channel_and_bad_hello();
-  offer_ids();
-  source_send();
-  ambiguous_send();
-  assert(fd_count() == before);
-  puts("descriptor lifecycle fixture: 7 cases passed");
+  for (fixture_role = ROLE_SHELL; fixture_role <= ROLE_LOCK; fixture_role++) {
+    optional_discovery();
+    snapshot_replacement();
+    readiness_race();
+    duplicate_channel_and_bad_hello();
+    offer_ids();
+    source_send();
+    ambiguous_send();
+    assert(fd_count() == before);
+  }
+  puts("descriptor lifecycle fixture: 7 cases passed for shell and lock roles");
   return 0;
 }

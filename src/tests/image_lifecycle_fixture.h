@@ -32,7 +32,10 @@
 #define FX static inline
 
 enum { HELLO_BYTES = 40, SOURCE_BYTES = 200, META_BYTES = 96 };
-enum { KIND_HELLO = 1, KIND_SOURCE = 2, ROLE_SHELL = 1, MAX_OFFERS = 4 };
+enum { KIND_HELLO = 1, KIND_SOURCE = 2, ROLE_SHELL = 1, ROLE_LOCK = 2, MAX_OFFERS = 4 };
+
+/* The role every packet, discovery object and refusal uses in this run. */
+static uint16_t fixture_role = ROLE_SHELL;
 enum { CHUNK = 65536, MAX_IMAGE_BYTES = 4 << 20, TRANSFER_MS = 2000 };
 enum { SEALED_BACKING_BYTES = 16 << 20, BACKING_SLOTS = 8 };
 #define REQUIRED_SEALS (F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL)
@@ -41,7 +44,9 @@ enum { SEALED_BACKING_BYTES = 16 << 20, BACKING_SLOTS = 8 };
  * status values are fixture labels for ResourceStatus's existing meanings. */
 enum { EV_READY = 1, EV_CLOSED, EV_ADMITTED, EV_STATUS, EV_RELEASED, EV_RES_RELEASED };
 enum { ST_ACCEPTED = 1, ST_REJECTED, ST_CANCELLED };
-enum { REASON_CHANNEL_UNAVAILABLE = 13 };
+/* Proposed image_channel_unavailable: shell ResourceStatus reason 13 at r9,
+ * lock reason 9 at r2. */
+FX uint32_t channel_unavailable_reason(void) { return fixture_role == ROLE_SHELL ? 13 : 9; }
 enum { DISP_RETAINED = 1, DISP_CAPTURED, DISP_BEFORE_USE, DISP_CANCELLED, DISP_DRAINED };
 enum { CLOSE_PEER = 1, CLOSE_PROTOCOL, CLOSE_HELLO_TIMEOUT, CLOSE_REVOKED };
 
@@ -92,7 +97,7 @@ FX void header_encode(unsigned char *p, uint32_t total, uint16_t kind, uint16_t 
   put32(p, 0, total);
   put16(p, 4, 1);
   put16(p, 6, kind);
-  put16(p, 8, ROLE_SHELL);
+  put16(p, 8, fixture_role);
   put16(p, 10, fds);
   put64(p, 16, epoch);
   put64(p, 24, gen);
@@ -239,7 +244,7 @@ FX int discovery_parse(const char *text, size_t length, uint64_t v[15]) {
     }
     p = eol + 1;
   }
-  if (p != end || v[0] != ROLE_SHELL || !v[1] || !v[2] || v[5] != SOURCE_BYTES || v[6] != 4 ||
+  if (p != end || v[0] != fixture_role || !v[1] || !v[2] || v[5] != SOURCE_BYTES || v[6] != 4 ||
       !v[7] || v[7] > MAX_OFFERS || v[8] != 1 || !v[4] || v[4] > 3)
     return -1;
   return 0;
@@ -277,7 +282,7 @@ struct backing {
   const unsigned char *map;
   size_t size;
   unsigned leases;
-  int retired, live;
+  int retired, live, release_pending; /* retired, unleased, awaiting journal room */
 };
 
 struct owner {
@@ -338,13 +343,16 @@ FX void emit(struct owner *o, int kind, uint64_t id, uint32_t value, uint32_t re
   if (!o->journal.alive) return;
   journal_push(&o->journal, &e, reserved);
 }
-/* The client reads and acknowledges one event, freeing its slot. */
+FX void owner_settle_pending(struct owner *o);
+/* The client reads and acknowledges one event, freeing its slot; a deferred
+ * ResourceReleased may then take it. */
 FX int owner_take(struct owner *o, struct event *e) {
   struct journal *j = &o->journal;
   if (!j->count) return 0;
   *e = j->events[j->head];
   j->head = (j->head + 1) % 32;
   j->count--;
+  owner_settle_pending(o);
   return 1;
 }
 
@@ -409,7 +417,7 @@ FX size_t owner_discovery(const struct owner *o, char *out, size_t capacity) {
   uint64_t v[15];
   size_t n;
   unsigned k;
-  v[0] = ROLE_SHELL; v[1] = o->epoch; v[2] = o->gen; v[4] = o->kinds; v[5] = SOURCE_BYTES;
+  v[0] = fixture_role; v[1] = o->epoch; v[2] = o->gen; v[4] = o->kinds; v[5] = SOURCE_BYTES;
   v[6] = 4; v[7] = MAX_OFFERS; v[8] = 1; v[9] = 250; v[10] = 2000; v[11] = CHUNK; v[12] = 500;
   v[13] = o->formats_gen; v[14] = o->limits_gen;
   n = (size_t)snprintf(out, capacity, "sophia-image-channel version=1\n");
@@ -451,7 +459,7 @@ FX int owner_accept(struct owner *o, int sock) {
   if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return A_WAIT;
   close_all(fds, n);
   if (got != HELLO_BYTES || n || bad || get(b, 0, 4) != HELLO_BYTES || get(b, 4, 2) != 1 ||
-      get(b, 6, 2) != KIND_HELLO || get(b, 8, 2) != ROLE_SHELL || get(b, 10, 2) ||
+      get(b, 6, 2) != KIND_HELLO || get(b, 8, 2) != fixture_role || get(b, 10, 2) ||
       get(b, 12, 4) || get(b, 16, 8) != o->epoch || get(b, 24, 8) != o->gen || get(b, 32, 8))
     goto reject;
   if (!journal_room(&o->journal, 1, 1)) goto reject;
@@ -473,7 +481,7 @@ FX int owner_begin(struct owner *o, const unsigned char meta[META_BYTES], uint64
   if (!o->epoch_live) return B_DEAD;
   if (o->channel != CH_LIVE) {
     if (journal_room(&o->journal, 1, 0))
-      emit(o, EV_STATUS, id, ST_REJECTED, REASON_CHANNEL_UNAVAILABLE, 0);
+      emit(o, EV_STATUS, id, ST_REJECTED, channel_unavailable_reason(), 0);
     return B_UNAVAILABLE;
   }
   if (!id || !get(meta, 8, 8) || !get(meta, 16, 8) || get(meta, 24, 8) != o->grant ||
@@ -529,7 +537,7 @@ FX int owner_receive(struct owner *o) {
     return RX_HANGUP;
   }
   if (bad || got < 40 || get(b, 0, 4) != (uint64_t)got || get(b, 4, 2) != 1 ||
-      get(b, 8, 2) != ROLE_SHELL || get(b, 12, 4) || get(b, 16, 8) != o->epoch ||
+      get(b, 8, 2) != fixture_role || get(b, 12, 4) || get(b, 16, 8) != o->epoch ||
       get(b, 24, 8) != o->gen || get(b, 6, 2) != KIND_SOURCE || got != SOURCE_BYTES)
     return owner_fault(o, fds, n);
   id = get(b, 32, 8);
@@ -687,12 +695,24 @@ FX void owner_lease(struct owner *o, uint64_t resource) {
   assert(b && !b->retired);
   b->leases++;
 }
+/* The last consumer is gone. On a live journal without room, the backing
+ * keeps its slot and charge until ResourceReleased can be recorded; it is
+ * never dropped silently. A dead journal records nothing. */
 FX void backing_settle(struct owner *o, struct backing *b) {
   if (!b->retired || b->leases) return;
+  if (o->journal.alive && !journal_room(&o->journal, 1, 0)) {
+    b->release_pending = 1;
+    return;
+  }
+  if (o->journal.alive) emit(o, EV_RES_RELEASED, b->resource, 0, 0, 0);
   munmap((void *)b->map, b->size);
   o->backing_charge -= b->size;
-  if (journal_room(&o->journal, 1, 0)) emit(o, EV_RES_RELEASED, b->resource, 0, 0, 0);
   memset(b, 0, sizeof(*b));
+}
+FX void owner_settle_pending(struct owner *o) {
+  unsigned i;
+  for (i = 0; i < BACKING_SLOTS; i++)
+    if (o->backings[i].live && o->backings[i].release_pending) backing_settle(o, &o->backings[i]);
 }
 FX void owner_unlease(struct owner *o, uint64_t resource) {
   struct backing *b = owner_backing(o, resource);
