@@ -1033,6 +1033,7 @@ preserved old uncertainty and isolation from an old ticket's late completion.
 
 Admin map 13 adds paired abrupt service-process death before/after claim,
 with retained uncertainty and no automatic retry.
+
 ## B3 upload window (working candidate)
 
 The shell client queues up to four writes from one borrowed, multi-chunk buffer,
@@ -1040,6 +1041,9 @@ splitting at canonical boundaries, msize and iounit. Replies match by handle and
 settle in issue order. Short writes drain the invalidated tail and resume at the
 confirmed cursor; EAGAIN drains first, then waits for retry. ESTALE stops recovery.
 End and clunk cannot pass outstanding writes. The separate lock client is unchanged.
+Both SDKs close the writer after draining a permanent head refusal, cancelling
+the resource before End. Rust previously retained the binding after refusing one
+unit; its B3 path now matches C's resource cancellation.
 
 Direct low-level users must call `sophia_sf_client_upload_retry` after progress or
 a bounded backoff when an upload waits. The client reads no clock. `sophia_ss`
