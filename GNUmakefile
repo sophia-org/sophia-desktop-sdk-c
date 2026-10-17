@@ -78,6 +78,7 @@ FILE_TESTS += portal_requester_session_test
 FILE_TESTS += portal_requester_transfer_test
 FILE_TESTS += portal_requester_upload_test
 ifeq ($(shell uname -s),Linux)
+FILE_TESTS += descriptor_kernel_test
 $(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
 endif
 $(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(wildcard src/tests/*.h) $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a
