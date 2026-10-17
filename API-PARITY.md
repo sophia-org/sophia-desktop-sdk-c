@@ -1,5 +1,30 @@
 # C and Rust SDK API parity
 
+## Explicit lock Negotiated selection at r2, C, 2026-10-17
+
+Lock revision 2 carries its selection on the wire. Negotiated's u16 at body
+offset 0 is selected_revision, 1 or 2, and is never inferred from the granted
+capabilities. Granted capabilities must include PRESENT (bit 0) and stay
+within mask 15. Bits 2 (sealed images) and 3 (DMA-BUF images), now named
+SOPHIA_LF_CAP_IMAGE_SEALED and SOPHIA_LF_CAP_IMAGE_DMABUF, are valid only
+when the selection is 2. An explicit selection of 2 with mask 1 or 3 is valid.
+The body stays 16 bytes and every other rule is unchanged.
+
+sophia_lf_decode_revision and sophia_lf_encode_revision accept a selection
+from 1 up to the given bound and preserve it in the record. Checking it
+against the offered range is the caller's. sophia_lf_decode and
+sophia_lf_encode stay revision 1: they read and write selection 1 with grants
+within PRESENT|CHORDS, and refuse selection 2.
+
+ABI: struct sophia_lf_negotiated gains a trailing uint16_t selected_revision,
+so callers that embed it must rebuild. The plain decoder sets it to 1, and on
+encode 0 means 1, so zero-initialized callers keep their bytes. The matching
+Rust change is 8618793. Nothing advertises lock r2. image_receipt_test covers
+plain selection 1 and its refusal of 2, byte identity under bound 1, every
+mask with PRESENT at selection 2 and its refusal below bound 2, image bits at
+selection 1, selections 0 and 3, missing PRESENT, unknown bits, reserved
+bytes, the chord bound, length and capacity.
+
 ## Shell sealed-image adapter, BAR at revision 9, C, 2026-10-17
 
 sophia_shell_image.h adds an optional adapter that joins a BAR shell session
@@ -98,8 +123,8 @@ other Submitted rule is unchanged: nonzero submission, zero reserved bytes,
 event identity and the exact 48-byte length. sophia_sf_decode/encode and
 sophia_lf_decode/encode, and every earlier revision, still refuse 0x7000.
 The other image kinds and values outside the legacy range stay refused at
-every revision. Lock r2 changes nothing else here: Negotiated still carries
-revision 1, and the lock _revision entry points accept revisions 1 and 2.
+every revision. The lock _revision entry points accept revisions 1 and 2.
+Negotiated's explicit selection is recorded in its own section above.
 
 This is C only. The matching Rust entry points are recorded with their own
 change. Selecting a revision in these calls advertises nothing; no session
