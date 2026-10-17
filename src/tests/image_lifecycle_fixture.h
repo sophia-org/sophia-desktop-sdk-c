@@ -402,6 +402,10 @@ FX void owner_terminal(struct owner *o, struct offer *f, uint32_t status, uint32
   offer_drop(f);
 }
 
+FX int owner_cancel(struct owner *o, uint64_t id);
+/* Channel loss withdraws interest in every live offer. Each still ends by its
+ * own custody: an unsent or synchronously held source is released at once,
+ * submitted work only after proven safe cleanup (disposition 5). */
 FX void owner_channel_close(struct owner *o, uint32_t reason) {
   unsigned i;
   if (o->channel != CH_LIVE) return;
@@ -410,7 +414,7 @@ FX void owner_channel_close(struct owner *o, uint32_t reason) {
   o->channel = CH_DISABLED;
   if (o->journal.alive) emit(o, EV_CLOSED, o->gen, reason, 0, 1);
   for (i = 0; i < MAX_OFFERS; i++)
-    if (o->offers[i].state == O_WAITING) owner_terminal(o, &o->offers[i], ST_CANCELLED, DISP_CANCELLED);
+    if (o->offers[i].state != O_FREE) owner_cancel(o, get(o->offers[i].meta, 0, 8));
 }
 
 FX size_t owner_discovery(const struct owner *o, char *out, size_t capacity) {
@@ -541,7 +545,18 @@ FX int owner_receive(struct owner *o) {
       get(b, 24, 8) != o->gen || get(b, 6, 2) != KIND_SOURCE || got != SOURCE_BYTES)
     return owner_fault(o, fds, n);
   id = get(b, 32, 8);
-  if (!id || id > o->mark) {
+  /* Packet shape and identity first, so a stale ID cannot hide a malformed
+   * packet: counts, sealed plane row and unused rows. */
+  if (!id || get(b, 40, 8) != id || get(b, 10, 2) != 1 || n != 1 || get(b, 40 + 76, 2) != 1 ||
+      get(b, 40 + 78, 2) != 1 || get(b, 136, 8) || get(b, 144, 4) != get(b, 40 + 72, 4) ||
+      get(b, 148, 4))
+    return owner_fault(o, fds, n);
+  for (row = 1; row < 4; row++) {
+    unsigned k;
+    for (k = 0; k < 16; k++)
+      if (b[136 + 16 * row + k]) return owner_fault(o, fds, n);
+  }
+  if (id > o->mark) {
     o->above_mark++;
     return owner_fault(o, fds, n);
   }
@@ -552,14 +567,7 @@ FX int owner_receive(struct owner *o) {
     return RX_STALE;
   }
   if (f->state != O_WAITING) return owner_fault(o, fds, n); /* second Source */
-  if (get(b, 10, 2) != 1 || n != 1 || memcmp(b + 40, f->meta, META_BYTES) || get(b, 136, 8) ||
-      get(b, 144, 4) != get(f->meta, 72, 4) || get(b, 148, 4))
-    return owner_fault(o, fds, n);
-  for (row = 1; row < 4; row++) {
-    unsigned k;
-    for (k = 0; k < 16; k++)
-      if (b[136 + 16 * row + k]) return owner_fault(o, fds, n);
-  }
+  if (memcmp(b + 40, f->meta, META_BYTES)) return owner_fault(o, fds, n); /* not as admitted */
   f->fd = fds[0];
   f->state = O_RECEIVED;
   return RX_RECEIVED;

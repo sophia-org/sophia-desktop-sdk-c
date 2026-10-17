@@ -166,6 +166,23 @@ static void expiry_race(void) {
   assert(raw_source(sock, meta, &fd, 1) == SOURCE_BYTES);
   assert(owner_receive(&o) == RX_STALE && o.stale_closed == 2 && o.channel == CH_LIVE);
   assert(o.journal.count == 0 && fd_count() == before);
+  /* Shape precedes the stale lookup: a stale ID carrying two references
+   * is a packet-shape fault, not a silent drain. */
+  {
+    struct owner q;
+    struct producer r;
+    int qs, two[2];
+    uint64_t live;
+    start(&q, &r, &qs, 64);
+    live = admit(&q, &r, 41, fd, 0);
+    q.offers[0].deadline = 0;
+    owner_tick(&q, 0); /* the offer expires: its ID is now stale */
+    two[0] = two[1] = fd;
+    assert(raw_source(qs, producer_find(&r, live)->meta, two, 2) == SOURCE_BYTES);
+    assert(owner_receive(&q) == RX_FAULT && q.stale_closed == 0 && q.channel == CH_DISABLED);
+    close(qs);
+    owner_end_epoch(&q);
+  }
   /* Above the mark: unadmitted, so the channel faults. */
   img.offer = id + 1;
   meta_encode(meta, &img);
@@ -224,37 +241,50 @@ static void channel_loss(void) {
   for (fallback = 0; fallback < 2; fallback++) {
     struct owner o;
     struct producer p;
-    int sock, fd = sealed_image(64, 64, REQUIRED_SEALS, 255);
-    uint64_t waiting, received;
+    int sock, fd = sealed_image(64, 64, REQUIRED_SEALS, 255), held;
+    uint64_t waiting, received, gpu;
     struct image img;
     start(&o, &p, &sock, 64);
     p.fallback_allowed = (int)fallback;
     waiting = admit(&o, &p, 40, fd, 0);
     received = admit(&o, &p, 41, fd, 0);
+    gpu = admit(&o, &p, 42, fd, 0);
     assert(producer_send(&p, received, 0) == 0 && owner_receive(&o) == RX_RECEIVED);
+    assert(producer_send(&p, gpu, 0) == 0 && owner_receive(&o) == RX_RECEIVED);
+    owner_gpu_submit(&o, gpu);
+    held = owner_find(&o, gpu)->fd;
     close(sock); /* the producer's channel end goes away */
     assert(owner_receive(&o) == RX_HANGUP && o.channel == CH_DISABLED);
+    /* Interest in every offer is withdrawn; each releases by its custody. */
     assert(count_events(&o, EV_CLOSED, 2) == 1);
     assert(count_events(&o, EV_RELEASED, waiting) == 1);
-    assert(count_events(&o, EV_RELEASED, received) == 0); /* custody stays separate */
-    while (owner_work(&o, 1)) {}
-    assert(count_events(&o, EV_STATUS, received) == 1);
-    { /* ChannelClosed arrives first; the admitted offer, not yet released,
+    assert(count_events(&o, EV_RELEASED, received) == 1);
+    assert(count_events(&o, EV_STATUS, gpu) == 1 && count_events(&o, EV_RELEASED, gpu) == 0);
+    assert(fcntl(held, F_GETFD) >= 0); /* submitted work keeps its reference */
+    { /* ChannelClosed arrives first; an admitted offer awaiting its release
          is never sent after it. */
       struct event e;
       unsigned sends = p.sends;
+      uint64_t unsent;
       assert(owner_take(&o, &e) && e.kind == EV_CLOSED);
       producer_event(&p, &e);
+      img = image_for(&o, 43, 64, 64);
+      assert(producer_begin(&p, &img, fd, 0, &unsent) == -ENODEV);
       assert(producer_find(&p, waiting)->state == P_ADMITTED);
       assert(producer_send(&p, waiting, 0) == -ENODEV && p.sends == sends);
     }
     producer_pump(&p, &o);
     assert(producer_find(&p, waiting)->disposition == DISP_CANCELLED);
-    assert(producer_find(&p, received)->status == ST_ACCEPTED);
+    assert(producer_find(&p, received)->status == ST_CANCELLED);
+    assert(producer_find(&p, received)->disposition == DISP_CANCELLED);
+    assert(!producer_may_reuse(&p, gpu));
+    owner_gpu_complete(&o, gpu); /* fake proof of safe cleanup */
+    assert(count_events(&o, EV_RELEASED, gpu) == 1 && count_events(&o, EV_STATUS, gpu) == 0);
+    producer_pump(&p, &o);
+    assert(producer_find(&p, gpu)->disposition == DISP_DRAINED && producer_may_reuse(&p, gpu));
     assert(p.channel == PC_CLOSED);
-
     assert(producer_path(&p) == (fallback ? PATH_BYTES : PATH_ERROR));
-    img = image_for(&o, 42, 64, 64);
+    img = image_for(&o, 44, 64, 64);
     img.offer = 99;
     {
       unsigned char meta[META_BYTES];
@@ -518,7 +548,10 @@ static void sealed_backing(void) {
   assert(raw_source(sock, producer_find(&p, second)->meta, &fd, 1) == SOURCE_BYTES);
   assert(raw_source(sock, producer_find(&p, second)->meta, &fd, 1) == SOURCE_BYTES);
   assert(owner_receive(&o) == RX_RECEIVED && owner_receive(&o) == RX_FAULT);
-  assert(o.offers[0].state == O_RECEIVED); /* the first source keeps custody */
+  /* The duplicate never replaced the first source; the fault withdrew the
+   * offer, which released once by its own custody. */
+  assert(count_events(&o, EV_STATUS, second) == 1 && count_events(&o, EV_RELEASED, second) == 1);
+  assert(owner_live(&o) == 0);
   close(sock);
   close(fd);
   owner_end_epoch(&o);

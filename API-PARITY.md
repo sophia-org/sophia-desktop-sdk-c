@@ -80,7 +80,12 @@ sealed backing bytes and a backing slot together; acceptance moves that charge
 into the retained backing instead of duplicating it. Epoch end retires every
 backing, so an unleased one is unmapped at once and a leased one lives until its
 last consumer lease ends, with no event on the dead journal. A Source whose
-metadata differs from the admitted record faults the channel. A producer never
+metadata differs from the admitted record faults the channel, and packet shape,
+including descriptor counts, is checked before the stale-ID lookup so a stale
+ID cannot hide a malformed packet. Channel loss withdraws interest in every live
+offer: unsent and synchronously held sources release at once with disposition
+4, and submitted work releases with disposition 5 only after its fake safe
+cleanup. A producer never
 sends after ChannelClosed, even for an offer still awaiting its release. On a
 live journal with no free slot, a retired and unleased backing keeps its slot
 and charge until ResourceReleased can be recorded, then records it exactly once.
@@ -94,7 +99,7 @@ not evidence about cancelling an in-flight worker. No public ABI,
 library code or vendored contract changes are part of this slice.
 
 Both programs also pass under clang AddressSanitizer, LeakSanitizer and UBSan.
-Twenty-seven mutants of the model, each breaking one named custody rule in a separate
+Twenty-nine mutants of the model, each breaking one named custody rule in a separate
 source copy under a hard timeout, all fail a named assertion in the case that
 covers that rule.
 
