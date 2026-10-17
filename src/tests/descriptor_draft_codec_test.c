@@ -187,6 +187,7 @@ static enum refusal classify(const char *family,const unsigned char *p,size_t n,
       if (get(p+88,4)>get(p+84,4)) return Capacity;
     }
     if (get(p+6,2)==0x7006 && n>=64) {
+      if (64+40*get(p+56,4)!=n) return Length;
       if (get(p+60,4)) return Reserved;
       if (get(p+56,4)>4096) return Capacity;
       if (get(p+56,4)) return FormatsUnsupported;
@@ -254,14 +255,14 @@ static void check_coherence(unsigned char *d,size_t dn,const unsigned char *l,co
 int main(void) {
   unsigned i;
   unsigned char limits[136],formats[64],discovery_bytes[2049];size_t dn=0;
-  for(i=0;i<53;++i) {
+  for(i=0;i<54;++i) {
     if(!strcmp(vectors[i].name,"shell-limits"))assert(unhex(vectors[i].hex,limits)==136);
     if(!strcmp(vectors[i].name,"shell-sealed-formats"))assert(unhex(vectors[i].hex,formats)==64);
     if(!strcmp(vectors[i].name,"shell-discovery"))dn=unhex(vectors[i].hex,discovery_bytes);
   }
   assert(dn);check_coherence(discovery_bytes,dn,limits,formats);
-  assert(sizeof(vectors)/sizeof(vectors[0])==53);
-  for (i=0;i<53;++i) {
+  assert(sizeof(vectors)/sizeof(vectors[0])==54);
+  for (i=0;i<54;++i) {
     const struct vector *v=&vectors[i];
     unsigned char bytes[2049]; size_t j, n=strlen(v->hex)/2;
     assert(n<sizeof(bytes));
@@ -276,6 +277,11 @@ int main(void) {
       bytes[n]=0; assert(!accepts(v->family,bytes,n+1,v->fds));
     }
   }
-  puts("draft image codec: 53 vectors and truncated-prefix controls passed");
+  { size_t size=64+40*4097; unsigned char *large=calloc(1,size);
+    assert(large);memcpy(large,formats,64);
+    for(i=0;i<4;++i)large[i]=(unsigned char)(size>>(8*i));
+    large[56]=1;large[57]=16;
+    assert(classify("record",large,size,0,limits,formats)==Capacity);free(large); }
+  puts("draft image codec: 54 vectors, prefix and formats capacity controls passed");
   return 0;
 }
