@@ -1,5 +1,13 @@
 # Extraction and contract provenance
 
+## Shell contract reconciliation, 2026-10-16
+
+The shell file specification now matches signed Sophia `d817e6d8ab1906ff191e6bbb1fec9a902ead9b89`:
+per-connection request ordering, reusable read-buffer accounting and the accepted
+CPU/allocation cost scope. This refreshes the document and its digest; no C API,
+wire record or implementation changes. Sophia's immutable snapshot check requires
+this equality before adopting the new SDK revision.
+
 ## Portal and broker publication candidate, 2026-10-16
 
 This series adds native portal requester sessions and broker sessions in both
