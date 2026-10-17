@@ -113,8 +113,13 @@ int sophia_ip_discover(struct sophia_ip *p, const void *text, size_t text_bytes,
         ip_fail(p, SOPHIA_IPX_DISCOVERY);
         return SOPHIA_IPR_CLOSED;
     }
-    /* Version 1 producers send sealed sources only. */
-    p->expect.source_kinds &= p->config.granted_kinds;
+    /* Discovery may withhold a negotiated kind (availability) but never
+     * names one negotiation did not grant. Version 1 producers send sealed
+     * sources only. */
+    if (p->expect.source_kinds & ~p->config.granted_kinds) {
+        ip_fail(p, SOPHIA_IPX_DISCOVERY);
+        return SOPHIA_IPR_CLOSED;
+    }
     if (!(p->expect.source_kinds & SOPHIA_IC_KIND_BIT_SEALED)) {
         ip_fail(p, SOPHIA_IPX_UNAVAILABLE);
         return SOPHIA_IPR_CLOSED;

@@ -13,7 +13,9 @@ layout, like sophia_ss and sophia_lc_client.
 After a successful attach the producer owns the socket. After a successful
 begin it owns the sealed source descriptor; on any other result the caller
 still owns it. Begin takes sealed sources only, with all four seals and the
-exact logical size. Offer IDs start at 1 and never repeat, at most the
+exact logical size. Discovery naming a source kind that negotiation did not
+grant is a fatal discovery error, never narrowed; a set without the sealed
+kind is clean unavailability. Offer IDs start at 1 and never repeat, at most the
 discovered offer bound are live, and a source is sent only after
 ImageAdmitted with byte-equal metadata. A failed or uncertain send closes
 the producer's descriptor and leaves the offer ambiguous; it is never sent

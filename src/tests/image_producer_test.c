@@ -385,8 +385,21 @@ static void discovery_outcomes(void)
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE && sophia_ip_path(&p) == SOPHIA_IPP_BYTES);
+    /* Discovery naming a kind negotiation did not grant is incoherent,
+     * not silently narrowed. */
     c.granted_kinds = SOPHIA_IC_KIND_BIT_DMABUF;
     make_set(&mixed, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, 3);
+    assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
+    assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_DISCOVERY && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
+    c.granted_kinds = SOPHIA_IC_KIND_BIT_SEALED;
+    assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
+    assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
+    assert(sophia_ip_cause(&p) == SOPHIA_IPX_DISCOVERY && sophia_ip_path(&p) == SOPHIA_IPP_ERROR);
+    /* A granted kind discovery withholds is availability: sealed granted
+     * and dmabuf-only discovery is clean. */
+    c.granted_kinds = 3;
+    make_set(&mixed, SOPHIA_IC_ROLE_SHELL, LIMITS_GEN, SOPHIA_IC_KIND_BIT_DMABUF);
     assert(sophia_ip_init(&p, &c, START) == SOPHIA_IPR_OK);
     assert(discover(&p, &mixed, 1, START) == SOPHIA_IPR_CLOSED);
     assert(sophia_ip_cause(&p) == SOPHIA_IPX_UNAVAILABLE);

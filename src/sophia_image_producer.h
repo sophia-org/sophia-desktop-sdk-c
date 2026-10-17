@@ -133,7 +133,9 @@ int sophia_ip_init(struct sophia_ip *, const struct sophia_ip_config *, uint64_t
  * or the read failure; only ENOENT means absent. A repeated pass number is
  * AGAIN without reading. Mixed generations are AGAIN (read a fresh set on a
  * later pass, within the startup deadline). Malformed, incoherent or denied
- * sets close the channel with DISCOVERY. OK means DISCOVERED. */
+ * sets close the channel with DISCOVERY, as does a set naming a source kind
+ * outside granted_kinds. A set without the sealed kind is clean
+ * UNAVAILABLE. OK means DISCOVERED. */
 int sophia_ip_discover(struct sophia_ip *, const void *text, size_t text_bytes,
                        const void *limits, size_t limits_bytes, const void *formats,
                        size_t formats_bytes, int read_errno, uint64_t pass, uint64_t now_ms);
