@@ -144,13 +144,13 @@ int sophia_sf_ack_encode(uint8_t dst[16], uint64_t epoch, uint64_t sequence);
 /* Negotiated shell revision 9 adds ResourceStatus Rejected reason 13,
  * image_channel_unavailable, and Submitted receipts naming ImageBegin
  * (0x7000). sophia_sf_decode/encode keep the r<=8 bounds and refuse both. The
- * _revision variants take the negotiated revision (1-9) and admit reason 13
+ * _revision variants take the negotiated revision (1-10) and admit reason 13
  * only for status 3, and candidate_kind 0x7000 only in Submitted, at revision
  * 9; every other bound is unchanged. Selecting revision 9 here does not
  * advertise it.
- * Revision 10 (spec/sophia-owned-ring.md) keeps reason 13 and replaces the
- * shell CPU image path with owned rings (capability bit 15); ImageBegin and
- * its receipt are not r10 records, so candidate_kind 0x7000 stays r9-only. */
+ * Revision 10 (spec/sophia-owned-ring.md) replaces the shell CPU image path
+ * with owned rings (capability bit 15). It retires sealed ingress, so reason
+ * 13 and candidate_kind 0x7000 both stay r9-only. */
 #define SOPHIA_SF_REVISION_IMAGE_CHANNEL 9u
 #define SOPHIA_SF_REVISION_OWNED_RING 10u
 #define SOPHIA_SF_CAP_CONTENT_SURFACE (UINT64_C(1) << 7)

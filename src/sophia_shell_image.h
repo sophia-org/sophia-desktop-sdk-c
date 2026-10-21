@@ -83,15 +83,21 @@ struct sophia_ss_ring_image {
 struct sophia_ss_ring_offer_info {
     struct sophia_or_offer offer;
     enum sophia_ss_ring_slot_state state;
-    enum sophia_ip_status status; /* 0 until the store's final ResourceStatus */
+    /* 0 until a terminal ResourceStatus for this grant and resource. Failed
+     * ResourceRetire/Cancel replies share that record (always Rejected), so
+     * before release this is evidence only (ACCEPTED once any Accepted is
+     * seen, else the latest). After RELEASED it is the outcome the exact
+     * SlotReleased selected, given a matching kind was seen: Accepted for
+     * reason 0, Cancelled for 11, else Rejected. */
+    enum sophia_ip_status status;
     uint32_t control_error;       /* errno of a refused Offer write */
     uint16_t reason;              /* SlotReleased reason */
     uint8_t changed_generation, cancel_requested;
     /* The role's transfer deadline passed while OFFERING or OFFERED. Local
      * only: custody still waits for the final status and SlotReleased. */
     uint8_t deadline_passed;
-    /* Accepted and the matching SlotReleased with reason 0 and no change:
-     * the only offers native adoption may consume. */
+    /* An observed Accepted and the matching SlotReleased with reason 0 and no
+     * change: the only offers native adoption may consume. */
     uint8_t adoptable;
 };
 
@@ -103,8 +109,12 @@ struct sophia_ss_ring_slot {
     struct sophia_or_offer offer;
     uint64_t deadline_ms;
     uint32_t control_error;
+    /* Terminal ResourceStatus kinds seen, never cleared. Failed control
+     * replies are Rejected too, so only SlotReleased picks the outcome, and
+     * it must match a kind seen here. */
     uint16_t reason;
-    uint8_t state, status, changed, cancelled, deadline_passed;
+    uint8_t state, status, accepted, rejected, cancelled_seen, changed, cancelled,
+        deadline_passed;
 };
 struct sophia_ss_image_ring {
     struct sophia_ip_ring memory;

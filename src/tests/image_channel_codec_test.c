@@ -452,6 +452,22 @@ static void coherence_controls(void)
         assert(sophia_ic_discovery_coherent(&shell.discovery, &l, &shell.formats, &shell.role,
                                             &expect) == SOPHIA_IC_COHERENCE);
     }
+    {
+        /* Kind 4 (owned ring) needs CPU validation capacity, as sealed does. */
+        struct sophia_ic_record l = shell.limits;
+        d = shell.discovery;
+        d.source_kinds = SOPHIA_IC_KIND_BIT_OWNED_RING;
+        assert(l.value.limits.max_validation_jobs);
+        assert(sophia_ic_discovery_coherent(&d, &l, &shell.formats, &shell.role, &expect) ==
+               SOPHIA_IC_OK);
+        l.value.limits.max_validation_jobs = 0;
+        l.value.limits.max_sealed_bytes = 0;
+        assert(sophia_ic_discovery_coherent(&d, &l, &shell.formats, &shell.role, &expect) ==
+               SOPHIA_IC_CAPACITY);
+        d.source_kinds = SOPHIA_IC_KIND_BIT_SEALED;
+        assert(sophia_ic_discovery_coherent(&d, &l, &shell.formats, &shell.role, &expect) ==
+               SOPHIA_IC_CAPACITY);
+    }
     /* 4097 rows with an exact length is a capacity refusal, not a length one. */
     assert(large);
     memcpy(large, f->bytes, 64);
@@ -542,9 +558,13 @@ static void role_codecs(void)
     assert(sophia_sf_decode_revision(b, n, 9, &back) == 0);
     assert(back.value.resource_status.reason == 13 && back.value.resource_status.status == 3);
     assert(sophia_sf_decode_revision(b, n, 0, &back) == -4);
-    /* r10 keeps reason 13; revisions above 10 are unknown. */
-    assert(sophia_sf_decode_revision(b, n, 10, &back) == 0 &&
-           back.value.resource_status.reason == 13);
+    /* r10 retires reason 13 with sealed ingress; above 10 is unknown. */
+    assert(sophia_sf_decode_revision(b, n, 10, &back) != 0);
+    {
+        uint8_t again[128];
+        size_t m;
+        assert(sophia_sf_encode_revision(again, sizeof again, 10, &r, &m) != 0);
+    }
     assert(sophia_sf_decode_revision(b, n, 11, &back) == -4);
     assert(sophia_sf_encode_revision(b, sizeof b, 11, &r, &n) == -4);
     /* Only Rejected carries reason 13; 14 stays out of range at r9. */

@@ -359,7 +359,7 @@ static void ring_settlement_barrier(void)
         r.value.resource_status.resource_id = 41;
         r.value.resource_status.resource_generation = 1;
         r.value.resource_status.status = 4;
-        r.value.resource_status.reason = 9;
+        r.value.resource_status.reason = 11;
         peer_record(&t.r.p, &r);
         ring_steps(&t, 4);
         assert(app_events(&t, kinds, 4) >= 1 && kinds[0] == SOPHIA_SF_RESOURCE_STATUS);
@@ -370,7 +370,7 @@ static void ring_settlement_barrier(void)
     }
     assert(app_events(&t, kinds, 4) >= 1);
     assert(ring_info(&t, offer).status == SOPHIA_IPS_CANCELLED);
-    ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41, 9, 0);
+    ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41, 11, 0);
     ring_steps(&t, 4);
     assert(ring_info(&t, offer).state == SOPHIA_SS_SLOT_RELEASED && !ring_info(&t, offer).adoptable);
     /* SlotReleased before its status is a contradiction. */
@@ -466,6 +466,120 @@ static void ring_open_refused(void)
     ring_close(&t, -1);
 }
 
+static void ring_retired_sealed_events(void)
+{
+    static const uint16_t retired[] = {SOPHIA_IC_IMAGE_ADMITTED, SOPHIA_IC_SOURCE_RELEASED};
+    unsigned k, i;
+    /* r10 keeps ChannelReady/ChannelClosed; sealed image events fail it. */
+    for (k = 0; k < 2; k++) {
+        struct image_rig t;
+        struct sophia_ic_record r;
+        int fd;
+        ring_start(&t, 0, 0);
+        fd = ring_ready(&t);
+        memset(&r, 0, sizeof(r));
+        r.header.kind = retired[k];
+        if (k == 0) {
+            r.value.image = image(41);
+            r.value.image.offer = 1;
+        } else {
+            r.value.released.offer = 1;
+            r.value.released.resource_id = 41;
+            r.value.released.resource_generation = 1;
+            r.value.released.disposition = SOPHIA_IC_RETAINED;
+        }
+        peer_image(&t.r.p, &r);
+        for (i = 0; i < 8 && sophia_ss_state(&t.r.s) == SOPHIA_SS_READY; i++)
+            ring_steps(&t, 1);
+        assert(sophia_ss_state(&t.r.s) == SOPHIA_SS_FAILED);
+        ring_close(&t, fd);
+    }
+}
+
+/* One ResourceStatus with its own transaction; the application sees each. */
+static void ring_status(struct image_rig *t, uint64_t tx, uint64_t resource, uint16_t status,
+                        uint16_t reason)
+{
+    uint16_t kinds[4];
+    peer_status(&t->r.p, tx, resource, status, reason);
+    ring_steps(t, 4);
+    assert(app_events(t, kinds, 4) == 1 && kinds[0] == SOPHIA_SF_RESOURCE_STATUS);
+}
+
+static void ring_status_evidence(void)
+{
+    struct sophia_ss_ring_image m;
+    struct image_rig t;
+    uint64_t offer;
+    unsigned k;
+    int fd;
+    /* Failed ResourceRetire/Cancel replies are Rejected ResourceStatus
+     * records for the same grant and resource. Neither first nor last
+     * decides: the exact SlotReleased must match evidence already seen. */
+    for (k = 0; k < 2; k++) {
+        ring_start(&t, 1, 0);
+        fd = ring_ready(&t);
+        m = ring_image(41, 4, 4);
+        assert(sophia_ss_image_ring_offer(&t.img, 0, &m, t.r.now, &offer) == SOPHIA_IPR_OK);
+        ring_steps(&t, 4);
+        if (k == 0) {
+            /* Failed retire (tx == offer) and failed cancel, then the final. */
+            ring_status(&t, offer, 41, 3, 1);
+            ring_status(&t, 900, 41, 3, 1);
+            assert(ring_info(&t, offer).status == SOPHIA_IPS_REJECTED);
+            ring_status(&t, offer, 41, 2, 0);
+        } else {
+            /* The final first, then a failed cancel's Stale reply. */
+            ring_status(&t, offer, 41, 2, 0);
+            ring_status(&t, 901, 41, 3, 1);
+        }
+        assert(ring_info(&t, offer).status == SOPHIA_IPS_ACCEPTED);
+        /* Statuses never free the slot. */
+        assert(ring_info(&t, offer).state == SOPHIA_SS_SLOT_OFFERED &&
+               !ring_info(&t, offer).adoptable && !sophia_ss_image_ring_pixels(&t.img, 0) &&
+               sophia_ss_image_ring_forget(&t.img, offer) != SOPHIA_IPR_OK);
+        ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41, 0, 0);
+        ring_steps(&t, 4);
+        assert(sophia_ss_image_ring_state(&t.img, NULL) == SOPHIA_SS_RING_READY);
+        assert(ring_info(&t, offer).state == SOPHIA_SS_SLOT_RELEASED &&
+               ring_info(&t, offer).status == SOPHIA_IPS_ACCEPTED && ring_info(&t, offer).adoptable);
+        ack_all(&t);
+        ring_close(&t, fd);
+    }
+    /* A genuine refusal: Rejected Malformed (3) then release reason 3. */
+    ring_start(&t, 1, 0);
+    fd = ring_ready(&t);
+    m = ring_image(41, 4, 4);
+    assert(sophia_ss_image_ring_offer(&t.img, 0, &m, t.r.now, &offer) == SOPHIA_IPR_OK);
+    ring_steps(&t, 4);
+    ring_status(&t, 902, 41, 3, 1);
+    ring_status(&t, offer, 41, 3, 3);
+    ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41, 3, 0);
+    ring_steps(&t, 4);
+    assert(ring_info(&t, offer).state == SOPHIA_SS_SLOT_RELEASED &&
+           ring_info(&t, offer).status == SOPHIA_IPS_REJECTED && !ring_info(&t, offer).adoptable);
+    ack_all(&t);
+    ring_close(&t, fd);
+    /* No matching kind fails the ring: success after only a failed control
+     * reply, cancellation after only Rejected, refusal after only Accepted. */
+    for (k = 0; k < 3; k++) {
+        ring_start(&t, 1, 0);
+        fd = ring_ready(&t);
+        m = ring_image(41, 4, 4);
+        assert(sophia_ss_image_ring_offer(&t.img, 0, &m, t.r.now, &offer) == SOPHIA_IPR_OK);
+        ring_steps(&t, 4);
+        ring_status(&t, offer, 41, k == 2 ? 2 : 3, k == 2 ? 0 : 1);
+        ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41,
+                   k == 0 ? 0 : k == 1 ? 11 : 3, 0);
+        ring_steps(&t, 4);
+        assert(sophia_ss_image_ring_state(&t.img, NULL) == SOPHIA_SS_RING_FAILED &&
+               ring_info(&t, offer).state == SOPHIA_SS_SLOT_UNKNOWN &&
+               !ring_info(&t, offer).adoptable);
+        ack_all(&t);
+        ring_close(&t, fd);
+    }
+}
+
 static void ring_attach_arguments(void)
 {
     struct image_rig t;
@@ -538,6 +652,8 @@ static void ring_native_adoption(void)
 static void owned_ring_session(void)
 {
     ring_open_refused();
+    ring_retired_sealed_events();
+    ring_status_evidence();
     ring_attach_arguments();
     ring_end_to_end();
     ring_local_and_control_refusals();

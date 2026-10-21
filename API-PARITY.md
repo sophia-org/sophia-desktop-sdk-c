@@ -48,18 +48,29 @@ Shared behavior.
   refusal; the id and generation stay spent.
 - **Events and refusals.** An event may prove a record's acceptance before its
   Rwrite reply; a later refusal of that record is a contradiction.
-- **Status matching.** ResourceStatus is matched by grant and resource
-  identity, never by transaction alone, because a cancel may carry its own.
-  The application still receives the status. Failed control replies,
-  including ResourceCancel and ResourceRetire outcomes, never settle a slot.
+- **Status evidence.** ResourceStatus is matched by grant and resource
+  identity, never by transaction, because a cancel may carry its own. The
+  application still receives every status. Failed ResourceRetire and
+  ResourceCancel replies are Rejected statuses for the same resource, so no
+  status settles a slot. Each live slot accumulates the terminal kinds it has
+  seen (Accepted, Rejected, Cancelled). They are never cleared, and
+  duplicates never fault. First, last and transaction never decide.
 - **Release barrier.** Only the exact SlotReleased frees a slot: same ring
-  identity, offer, slot, slot generation and resource, after that offer's
-  final status. A release before its status, a mismatch, ChannelClosed,
-  socket closure or journal loss fails the ring and leaves live slots
-  UNKNOWN, never reused.
-- **Adoption.** Only status 2 with reason 0 and no generation change, plus the
-  exact release, is adoptable.
-
+  identity, offer, slot, slot generation and resource. It selects the
+  outcome, and it must match a kind already seen: reason 0 needs Accepted,
+  reason 11 (Cancelled) needs Cancelled, and any other reason needs Rejected.
+  The status then reports that outcome. Sophia emits status 4 only with
+  reason 11, and status 3 with the same reason as the release. A release
+  without matching evidence (including one before any status), a mismatch,
+  ChannelClosed, socket closure or journal loss fails the ring and leaves
+  live slots UNKNOWN, never reused.
+- **Adoption.** Only a release with reason 0 and no generation change,
+  after an observed Accepted, is adoptable.
+- **Envelope at r10.** Only ChannelReady and ChannelClosed from the image
+  event family, plus the Limits and Formats objects, are carried.
+  ImageBegin, ImageAdmitted, SourceReleased, the ImageBegin receipt and
+  ResourceStatus reason 13 are r9-only, and on an r10 journal they fail the
+  session.
 - **Local deadline.** Each offer's deadline is offer time plus the role's
   `transfer_timeout_ms`. `deadline_passed` (C `sophia_ss_ring_offer_info`, Rust
   `RingOfferInfo`, set by `RingProducer::expire`) flips while the offer is live,
@@ -73,21 +84,27 @@ Independent tests.
   then capacity 184320 as a separate admission check, then the fd count, and
   re-encodes every accepted row byte for byte. Categories are not mapped to
   SDK refusals. It also covers geometry and canonical encode.
-- C: `shell_image_test` adds eight r10 scenarios against the scripted 9P peer
+- C: `shell_image_test` adds ten r10 scenarios against the scripted 9P peer
   and a real SEQPACKET endpoint: refused control open (fid clunked); attach
   arguments; end to end (sealed begin refused, a passed deadline releases
   nothing); local and
   control refusals; cancel status under a foreign transaction; release before
-  status; RingRefused, local capacity refusal and journal loss; and native
+  status; status evidence (failed retire and cancel replies before and after
+  Accepted, a genuine refusal, and mismatched releases that fail); retired
+  sealed events; RingRefused, local capacity refusal and journal loss; and native
   adoption, which is refused before release and for a rejected offer.
   `image_channel_codec_test` and `image_receipt_test` cover the role-qualified
   kind 4 and the r10 revision codec.
 - Rust: Muse's scripted adapter suite (15 cases). Its revision is recorded when
   the Rust series is committed.
 
-Not covered: a live Sophia production-export run of either SDK, and
-Lom/Provlita migration. The C commit and Rust revision must both be recorded
-before Sophia moves its pins. Public struct layouts changed (`sophia_sf_client`,
+Production export: Sophia's `shell_files_c_roles` builds this SDK's
+`src/tests/sophia_shell_files_role_peer.c` (launcher and dock at r10, direct
+fill, settlement, forget) with `SOPHIA_C_SDK_SOURCE` and passes against
+sophia-d4-design with Rust 1370f0c imported.
+
+Not covered: Lom/Provlita migration. The C commit and Rust revision must
+both be recorded before Sophia moves its pins. Public struct layouts changed (`sophia_sf_client`,
 `sophia_ss_image`, `sophia_ss_image_config`), so rebuild C clients and bindings.
 
 ## Mapped ISB builder, 2026-10-18

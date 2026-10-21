@@ -193,6 +193,15 @@ static int exact(const struct sophia_ss_ring_slot *s, const struct sophia_or_eve
            s->offer.resource_generation == e->resource_generation;
 }
 
+enum { CANCELLED_REASON = 11 };
+
+static int evidence(const struct sophia_ss_ring_slot *s, uint16_t reason)
+{
+    if (!reason)
+        return s->accepted;
+    return reason == CANCELLED_REASON ? s->cancelled_seen : s->rejected;
+}
+
 void ss_ring_event(struct sophia_ss_image *img, const uint8_t *b, size_t n)
 {
     struct sophia_ss_image_ring *r = &img->ring;
@@ -227,9 +236,15 @@ void ss_ring_event(struct sophia_ss_image *img, const uint8_t *b, size_t n)
         if (r->state != SOPHIA_SS_RING_READY || e.slot >= r->registration.slots)
             break;
         s = &r->slots[e.slot];
-        /* Release follows that offer's final store status, never precedes it. */
-        if (!exact(s, &e) || !s->status)
+        /* Release follows the final store status, never precedes it, so its
+         * reason must match a status kind already seen: Accepted for 0,
+         * Cancelled for 11, Rejected otherwise. Order, transaction and failed
+         * control replies never pick the outcome. */
+        if (!exact(s, &e) || !evidence(s, e.reason))
             break;
+        s->status = (uint8_t)(!e.reason                        ? SOPHIA_IPS_ACCEPTED
+                              : e.reason == CANCELLED_REASON ? SOPHIA_IPS_CANCELLED
+                                                             : SOPHIA_IPS_REJECTED);
         s->state = SOPHIA_SS_SLOT_RELEASED;
         s->reason = e.reason;
         s->changed = e.changed_generation;
@@ -238,8 +253,10 @@ void ss_ring_event(struct sophia_ss_image *img, const uint8_t *b, size_t n)
     fail(r);
 }
 
-/* The store's final status for a live offer: matched by grant and resource,
- * since a cancellation may carry its own transaction. */
+/* Terminal statuses for a live offer, matched by grant and resource since a
+ * cancellation may carry its own transaction. Failed ResourceRetire/Cancel
+ * replies share the record, so every one is kept as evidence and none is a
+ * contradiction; the exact SlotReleased decides. */
 void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *e)
 {
     struct sophia_ss_image_ring *r = &img->ring;
@@ -250,8 +267,14 @@ void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *
         return;
     for (i = 0; i < SOPHIA_OR_MAX_SLOTS; i++) {
         struct sophia_ss_ring_slot *s = &r->slots[i];
-        if (live(s) && !s->status && s->offer.resource_id == v->resource_id &&
+        if (live(s) && s->offer.resource_id == v->resource_id &&
             s->offer.resource_generation == v->resource_generation) {
+            if (v->status == 2)
+                s->accepted = 1;
+            else if (v->status == 4)
+                s->cancelled_seen = 1;
+            else
+                s->rejected = 1;
             s->status = (uint8_t)(v->status == 2 ? SOPHIA_IPS_ACCEPTED
                                   : v->status == 3 ? SOPHIA_IPS_REJECTED
                                                    : SOPHIA_IPS_CANCELLED);
@@ -390,14 +413,15 @@ static void info_of(const struct sophia_ss_ring_slot *s, struct sophia_ss_ring_o
     memset(out, 0, sizeof *out);
     out->offer = s->offer;
     out->state = (enum sophia_ss_ring_slot_state)s->state;
-    out->status = (enum sophia_ip_status)s->status;
+    out->status = (enum sophia_ip_status)(s->accepted && s->state != SOPHIA_SS_SLOT_RELEASED
+                                              ? SOPHIA_IPS_ACCEPTED
+                                              : s->status);
     out->control_error = s->control_error;
     out->reason = s->reason;
     out->changed_generation = s->changed;
     out->cancel_requested = s->cancelled;
     out->deadline_passed = s->deadline_passed;
-    out->adoptable = s->state == SOPHIA_SS_SLOT_RELEASED && s->status == SOPHIA_IPS_ACCEPTED &&
-                     !s->reason && !s->changed;
+    out->adoptable = s->state == SOPHIA_SS_SLOT_RELEASED && !s->reason && !s->changed;
 }
 
 int sophia_ss_image_ring_info(const struct sophia_ss_image *img, uint64_t offer,
