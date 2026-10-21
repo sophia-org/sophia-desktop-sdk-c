@@ -560,6 +560,23 @@ static void ring_status_evidence(void)
            ring_info(&t, offer).status == SOPHIA_IPS_REJECTED && !ring_info(&t, offer).adoptable);
     ack_all(&t);
     ring_close(&t, fd);
+    /* Accepted, then cancellation with a changed generation (as owned_release
+     * reports it): the release selects Cancelled, never adoptable. */
+    ring_start(&t, 1, 0);
+    fd = ring_ready(&t);
+    m = ring_image(41, 4, 4);
+    assert(sophia_ss_image_ring_offer(&t.img, 0, &m, t.r.now, &offer) == SOPHIA_IPR_OK);
+    ring_steps(&t, 4);
+    ring_status(&t, offer, 41, 2, 0);
+    ring_status(&t, 903, 41, 4, 11);
+    ring_event(&t.r.p, SOPHIA_OR_SLOT_RELEASED, offer, 0, 2, 41, 11, 1);
+    ring_steps(&t, 4);
+    assert(sophia_ss_image_ring_state(&t.img, NULL) == SOPHIA_SS_RING_READY);
+    assert(ring_info(&t, offer).state == SOPHIA_SS_SLOT_RELEASED &&
+           ring_info(&t, offer).status == SOPHIA_IPS_CANCELLED &&
+           ring_info(&t, offer).changed_generation && !ring_info(&t, offer).adoptable);
+    ack_all(&t);
+    ring_close(&t, fd);
     /* No matching kind fails the ring: success after only a failed control
      * reply, cancellation after only Rejected, refusal after only Accepted. */
     for (k = 0; k < 3; k++) {

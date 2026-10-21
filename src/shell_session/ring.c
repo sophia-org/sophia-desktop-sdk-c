@@ -413,9 +413,10 @@ static void info_of(const struct sophia_ss_ring_slot *s, struct sophia_ss_ring_o
     memset(out, 0, sizeof *out);
     out->offer = s->offer;
     out->state = (enum sophia_ss_ring_slot_state)s->state;
-    out->status = (enum sophia_ip_status)(s->accepted && s->state != SOPHIA_SS_SLOT_RELEASED
-                                              ? SOPHIA_IPS_ACCEPTED
-                                              : s->status);
+    /* Accepted precedence is pending evidence only; once released the status
+     * is the outcome the release selected. */
+    out->status = (enum sophia_ip_status)(live(s) && s->accepted ? SOPHIA_IPS_ACCEPTED
+                                                                 : s->status);
     out->control_error = s->control_error;
     out->reason = s->reason;
     out->changed_generation = s->changed;

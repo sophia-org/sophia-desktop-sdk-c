@@ -85,8 +85,8 @@ struct sophia_ss_ring_offer_info {
     enum sophia_ss_ring_slot_state state;
     /* 0 until a terminal ResourceStatus for this grant and resource. Failed
      * ResourceRetire/Cancel replies share that record (always Rejected), so
-     * before release this is evidence only (ACCEPTED once any Accepted is
-     * seen, else the latest). After RELEASED it is the outcome the exact
+     * while OFFERING/OFFERED this is evidence only (ACCEPTED once any
+     * Accepted is seen, else the latest). After RELEASED it is the outcome the exact
      * SlotReleased selected, given a matching kind was seen: Accepted for
      * reason 0, Cancelled for 11, else Rejected. */
     enum sophia_ip_status status;
