@@ -1,5 +1,95 @@
 # C and Rust SDK API parity
 
+## Shell r10 owned ring, 2026-10-21
+
+Contract: Sophia signed `c2193fa4b`, copied byte-for-byte into
+`spec/sophia-owned-ring.md`, `spec/sophia-owned-ring-v1.kdl` and
+`spec/golden/sophia-owned-ring-v1.tsv`, with the amended image-channel and
+shell-files documents and KDL. Shell r10 (capability bit 15) is the only shell
+CPU image path that Sophia's contract now accepts. Lock r2 sealed images,
+DMA-BUF and metadata-only shell r1–r8 are unchanged. The r9 sealed shell
+adapter stays in this series until Lom and Provlita migrate.
+
+| Operation | C | Rust |
+| --- | --- | --- |
+| Capability, kind, revision | `SOPHIA_SF_CAP_OWNED_RING`, `SOPHIA_IC_KIND_BIT_OWNED_RING`, `SOPHIA_SF_REVISION_OWNED_RING` | `IMAGE_CAPABILITY_OWNED_RING`, `SHELL_IMAGE_SOURCE_OWNED_RING`, `SOPHIA_SHELL_OWNED_RING_REVISION` |
+| Records (D4C1/D4F1/D4E1) | `sophia_or_*_encode`, `sophia_or_control_decode`, `sophia_or_source_decode`, `sophia_or_event_decode` | `shell_files::owned_ring` `RingRegistration`, `RingOffer`, `RingEvent` |
+| Geometry | `sophia_or_geometry` | ring geometry in the codec |
+| Ring memory | `sophia_ip_ring_create` / `sophia_ip_ring_close` | `sophia-isb` `MappedRing` |
+| Registration | eager, after ChannelReady grants exactly 4; `ring_slots`/`ring_capacity` in `sophia_ss_image_config` | eager, after ChannelReady grants exactly 4; `ShellImageConfig {ring_slots, ring_capacity, content_grant_epoch}` (session), `RingProducerConfig` (producer) |
+| Ring state | `sophia_ss_image_ring_state` (reason and control errno) | `RingProducer::ready`, `closed`, `cause`, `control_error` |
+| Fill a slot | `sophia_ss_image_ring_pixels(img, slot)`, then `sophia_ss_image_ring_offer` | `acquire_slot` → `RingSlotFill::pixels_mut` → `commit`; or `image_upload_ring_fill` / `image_upload_ring` |
+| Abandon a fill | do not offer; nothing is spent | `RingSlotFill::abort` or drop; nothing is spent |
+| Offer custody | `sophia_ss_image_ring_info` (`adoptable`, `deadline_passed`), `_next` | `image_ring_offer` (`RingOfferState::Settled`, `deadline_passed`) |
+| Cancel | `sophia_ss_image_ring_cancel` | `image_cancel` |
+| Forget an offer | `sophia_ss_image_ring_forget` after RELEASED (adoptable or not), REFUSED or UNKNOWN | `image_forget` after `Settled`, `Refused` or `Unknown` |
+| Native adoption | `sophia_ns_adopt_image` on an `adoptable` ring offer | `adopt_native_image` on a `Settled` ring offer |
+| Sealed source at r10 | `sophia_ss_image_begin` refuses; the fd stays with the caller | `image_begin` refuses and returns the fd |
+| Close | `sophia_ss_image_close` | drop |
+
+Shared behavior.
+- **Defaults.** One slot, with capacity equal to the granted `max_resource_bytes`
+  rounded down to a multiple of four. A configured capacity above the grant
+  fails locally before any write. Every registration may still meet
+  RingRefused (Session headroom); that state is final for the connection, and
+  there is no sealed or byte fallback.
+- **Ring memory.** One memfd, allocated up front. GROW and SHRINK are sealed
+  first; after the single shared writable mapping is marked DONTFORK,
+  FUTURE_WRITE and SEAL are added, so the descriptor sent with D4F1 accepts
+  no `pwrite` and no new writable mapping.
+- **Ids and generations.** The SDK assigns offer ids from 1 and per-slot
+  generations from 2 in steps of 2. It writes the generation word before the
+  Offer and never touches the slot again until release.
+- **Local refusals.** These spend nothing: dimensions out of range,
+  `width*height*4` above capacity, a slot that is not free, and a resource
+  already live in another slot.
+- **Control writes.** One control write is active at a time. EAGAIN resends
+  the identical bytes with 4–256 ms backoff. Any other errno is a definitive
+  refusal; the id and generation stay spent.
+- **Events and refusals.** An event may prove a record's acceptance before its
+  Rwrite reply; a later refusal of that record is a contradiction.
+- **Status matching.** ResourceStatus is matched by grant and resource
+  identity, never by transaction alone, because a cancel may carry its own.
+  The application still receives the status. Failed control replies,
+  including ResourceCancel and ResourceRetire outcomes, never settle a slot.
+- **Release barrier.** Only the exact SlotReleased frees a slot: same ring
+  identity, offer, slot, slot generation and resource, after that offer's
+  final status. A release before its status, a mismatch, ChannelClosed,
+  socket closure or journal loss fails the ring and leaves live slots
+  UNKNOWN, never reused.
+- **Adoption.** Only status 2 with reason 0 and no generation change, plus the
+  exact release, is adoptable.
+
+- **Local deadline.** Each offer's deadline is offer time plus the role's
+  `transfer_timeout_ms`. `deadline_passed` (C `sophia_ss_ring_offer_info`, Rust
+  `RingOfferInfo`, set by `RingProducer::expire`) flips while the offer is live,
+  mirroring the sealed plane. It releases nothing: the slot stays unwritable
+  and unforgettable until the final status and the exact SlotReleased.
+- **Control fid.** A refused Tlopen of `owned-ring-v1` clunks its walked fid
+  before the refusal is reported.
+
+Independent tests.
+- C: `owned_ring_codec_test` reads all 36 corpus rows. It applies shape decode,
+  then capacity 184320 as a separate admission check, then the fd count, and
+  re-encodes every accepted row byte for byte. Categories are not mapped to
+  SDK refusals. It also covers geometry and canonical encode.
+- C: `shell_image_test` adds eight r10 scenarios against the scripted 9P peer
+  and a real SEQPACKET endpoint: refused control open (fid clunked); attach
+  arguments; end to end (sealed begin refused, a passed deadline releases
+  nothing); local and
+  control refusals; cancel status under a foreign transaction; release before
+  status; RingRefused, local capacity refusal and journal loss; and native
+  adoption, which is refused before release and for a rejected offer.
+  `image_channel_codec_test` and `image_receipt_test` cover the role-qualified
+  kind 4 and the r10 revision codec.
+- Rust: Muse's scripted adapter suite (15 cases). Its revision is recorded when
+  the Rust series is committed.
+
+Not covered: a live Sophia production-export run of either SDK, and
+Lom/Provlita migration. The C commit and Rust revision must both be recorded
+before Sophia moves its pins. Public struct layouts changed (`sophia_sf_client`,
+`sophia_ss_image`, `sophia_ss_image_config`), so rebuild C clients and bindings.
+
 ## Mapped ISB builder, 2026-10-18
 
 Both SDKs build an ISB in place, so producers fill pixels without a staging

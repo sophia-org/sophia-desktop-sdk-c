@@ -24,7 +24,7 @@ static int r9_rejection(uint16_t revision, uint16_t kind, uint16_t status, uint1
 
 static int r9_receipt(uint16_t revision, uint16_t kind, uint16_t candidate_kind)
 {
-    return revision >= SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_SUBMITTED &&
+    return revision == SOPHIA_SF_REVISION_IMAGE_CHANNEL && kind == SOPHIA_SF_SUBMITTED &&
            candidate_kind == SOPHIA_SF_KIND_IMAGE_BEGIN;
 }
 
@@ -43,7 +43,7 @@ int sophia_sf_decode_revision(const void *src, size_t bytes, uint16_t revision,
 {
     const uint8_t *b = src;
     struct sophia_sf_record v;
-    if (!src || !out || !revision || revision > SOPHIA_SF_REVISION_IMAGE_CHANNEL)
+    if (!src || !out || !revision || revision > SOPHIA_SF_REVISION_OWNED_RING)
         return -4;
     if (bytes == STATUS_BYTES &&
         r9_rejection(revision, (uint16_t)sf_get(b + 6, 2), (uint16_t)sf_get(b + STATUS_AT, 2),
@@ -71,7 +71,7 @@ int sophia_sf_encode_revision(void *dst, size_t capacity, uint16_t revision,
     size_t at;
     uint16_t value;
     int status;
-    if (!dst || !r || !written || !revision || revision > SOPHIA_SF_REVISION_IMAGE_CHANNEL)
+    if (!dst || !r || !written || !revision || revision > SOPHIA_SF_REVISION_OWNED_RING)
         return -4;
     copy = *r;
     if (r->header.kind == SOPHIA_SF_RESOURCE_STATUS &&

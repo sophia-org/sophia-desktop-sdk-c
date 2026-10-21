@@ -327,8 +327,11 @@ static void record_controls(void)
         assert(sophia_ic_record_encode(b, sizeof b, &r, &n) ==
                (i >= 1 && i <= 4 ? SOPHIA_IC_OK : SOPHIA_IC_VALUE));
     }
+    /* Shell r10 grants exactly 4; role exactness is the producer's check. */
     r.header.kind = SOPHIA_IC_CHANNEL_READY;
     r.value.channel.value = 4;
+    assert(sophia_ic_record_encode(b, sizeof b, &r, &n) == SOPHIA_IC_OK);
+    r.value.channel.value = 5;
     assert(sophia_ic_record_encode(b, sizeof b, &r, &n) == SOPHIA_IC_VALUE);
     v = named("image-begin");
     memcpy(b, v->bytes, v->count);
@@ -472,6 +475,16 @@ static void discovery_controls(void)
     at = strstr((char *)b, "source_kinds=1");
     assert(at);
     at[13] = '4';
+    assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_OK &&
+           d.source_kinds == SOPHIA_IC_KIND_BIT_OWNED_RING);
+    at[13] = '5';
+    assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_SOURCE_KIND);
+    at[13] = '6';
+    assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_SOURCE_KIND);
+    at[13] = '4';
+    at = strstr((char *)b, "role=1");
+    assert(at);
+    at[5] = '2';
     assert(sophia_ic_discovery_decode(b, v->count, &d) == SOPHIA_IC_SOURCE_KIND);
     memcpy(b, v->bytes, v->count);
     at = strstr((char *)b, "role=1");
@@ -529,8 +542,11 @@ static void role_codecs(void)
     assert(sophia_sf_decode_revision(b, n, 9, &back) == 0);
     assert(back.value.resource_status.reason == 13 && back.value.resource_status.status == 3);
     assert(sophia_sf_decode_revision(b, n, 0, &back) == -4);
-    assert(sophia_sf_decode_revision(b, n, 10, &back) == -4);
-    assert(sophia_sf_encode_revision(b, sizeof b, 10, &r, &n) == -4);
+    /* r10 keeps reason 13; revisions above 10 are unknown. */
+    assert(sophia_sf_decode_revision(b, n, 10, &back) == 0 &&
+           back.value.resource_status.reason == 13);
+    assert(sophia_sf_decode_revision(b, n, 11, &back) == -4);
+    assert(sophia_sf_encode_revision(b, sizeof b, 11, &r, &n) == -4);
     /* Only Rejected carries reason 13; 14 stays out of range at r9. */
     r.value.resource_status.status = 4;
     assert(sophia_sf_encode_revision(b, sizeof b, 9, &r, &n) != 0);
