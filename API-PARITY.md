@@ -100,8 +100,11 @@ Independent tests.
 
 Production export: Sophia's `shell_files_c_roles` builds this SDK's
 `src/tests/sophia_shell_files_role_peer.c` (launcher and dock at r10, direct
-fill, settlement, forget) with `SOPHIA_C_SDK_SOURCE` and passes against
-sophia-d4-design with Rust 1370f0c imported.
+fill, settlement, forget) with `SOPHIA_C_SDK_SOURCE`, and `shell_native_sdk`
+builds `src/tests/desktop_native_peer.c` (the native launcher lifecycle with a
+ring offer settled by Accepted and the exact SlotReleased, then
+`sophia_ns_adopt_image`). Both pass against sophia-d4-design with the C
+2eb02472 and Rust ce926b53 pins.
 
 Not covered: Lom/Provlita migration. The C commit and Rust revision must
 both be recorded before Sophia moves its pins. Public struct layouts changed (`sophia_sf_client`,
