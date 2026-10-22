@@ -34,11 +34,15 @@ static uint64_t image_bit(uint16_t revision)
     return revision == SOPHIA_SF_REVISION_OWNED_RING ? RING_BIT : SEALED_BIT;
 }
 
-static int image_mask(uint64_t capabilities, uint16_t revision)
+static int image_mask(uint64_t capabilities, uint16_t revision, int dma_buf)
 {
-    uint64_t want = image_bit(revision) | CONTENT_BIT;
+    uint64_t image = image_bit(revision) |
+                     (dma_buf && revision == SOPHIA_SF_REVISION_OWNED_RING ? DMA_BIT : 0);
+    uint64_t want = image | CONTENT_BIT;
+    if (dma_buf && revision != SOPHIA_SF_REVISION_OWNED_RING)
+        return 0;
     return (capabilities & want) == want &&
-           !(capabilities & (SEALED_BIT | DMA_BIT | RING_BIT) & ~image_bit(revision));
+           !(capabilities & (SEALED_BIT | DMA_BIT | RING_BIT) & ~image);
 }
 
 int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
@@ -51,12 +55,13 @@ int sophia_ss_image_attach(struct sophia_ss *s, struct sophia_ss_image *img)
     revision = o->required_capabilities & RING_BIT ? SOPHIA_SF_REVISION_OWNED_RING
                                                    : SOPHIA_SF_REVISION_IMAGE_CHANNEL;
     if (o->minimum_revision > revision || o->maximum_revision < revision ||
-        !image_mask(o->required_capabilities, revision))
+        !image_mask(o->required_capabilities, revision, img->config.dma_buf))
         return SOPHIA_IPR_ARGUMENT;
     if ((s->state != SOPHIA_SS_NEGOTIATING && s->state != SOPHIA_SS_READY) || s->image)
         return SOPHIA_IPR_BUSY;
     if (s->files.negotiated && (s->files.welcome.selected_revision != revision ||
-                                !image_mask(s->files.welcome.capabilities, revision)))
+                                !image_mask(s->files.welcome.capabilities, revision,
+                                            img->config.dma_buf)))
         return SOPHIA_IPR_ARGUMENT;
     img->session = s;
     s->image = img;
@@ -390,6 +395,57 @@ int sophia_ss_image_begin(struct sophia_ss_image *img, struct sophia_ic_metadata
     if (free_ticket == SOPHIA_IP_MAX_OFFERS || !ss_room(s, SOPHIA_SS_IMAGE_BEGIN_BYTES))
         return SOPHIA_IPR_BUSY;
     r = sophia_ip_begin(&img->producer, metadata, source_fd, now_ms, body, offer);
+    if (r != SOPHIA_IPR_OK)
+        return r;
+    memset(&record, 0, sizeof(record));
+    record.header.kind = SOPHIA_IC_IMAGE_BEGIN;
+    record.header.epoch = s->files.epoch;
+    record.header.submission = 1;
+    record.value.image = *metadata;
+    if (sophia_ic_record_encode(bytes, sizeof(bytes), &record, &n) != SOPHIA_IC_OK ||
+        n != sizeof(bytes) || memcmp(bytes + 32, body, sizeof(body)) ||
+        ss_admit_encoded(s, bytes, n, ticket)) {
+        /* Unreachable after the checks above; keep custody honest anyway. */
+        (void)sophia_ip_begin_refused(&img->producer, *offer, now_ms);
+        return SOPHIA_IPR_REFUSED;
+    }
+    img->tickets[free_ticket].ticket = *ticket;
+    img->tickets[free_ticket].offer = *offer;
+    (void)ss_pump(s, 0);
+    return SOPHIA_IPR_OK;
+}
+
+int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *img, struct sophia_ic_metadata *metadata,
+                                  const struct sophia_ic_plane *plane, int source_fd, int take_fd,
+                                  uint64_t now_ms, uint64_t *offer, uint64_t *ticket)
+{
+    struct sophia_ss *s;
+    struct sophia_ic_record record;
+    uint8_t bytes[SOPHIA_SS_IMAGE_BEGIN_BYTES];
+    uint8_t body[SOPHIA_IC_METADATA_BYTES];
+    size_t n;
+    unsigned i, free_ticket = SOPHIA_IP_MAX_OFFERS;
+    int r;
+    if (!img || !img->session || !metadata || !plane || !offer || !ticket || source_fd < 0)
+        return SOPHIA_IPR_ARGUMENT;
+    s = img->session;
+    if (!img->started || ss_final(s))
+        return SOPHIA_IPR_CLOSED;
+    /* DMA-BUF exists only as the r10 opt-in beside the owned ring. */
+    if (!ss_ring_mode(img) || !img->config.dma_buf)
+        return SOPHIA_IPR_REFUSED;
+    if (s->state != SOPHIA_SS_READY)
+        return SOPHIA_IPR_AGAIN;
+    for (i = 0; i < SOPHIA_IP_MAX_OFFERS; i++)
+        if (!img->tickets[i].ticket) {
+            free_ticket = i;
+            break;
+        }
+    /* Room first: once the producer owns the fd, admission cannot fail. */
+    if (free_ticket == SOPHIA_IP_MAX_OFFERS || !ss_room(s, SOPHIA_SS_IMAGE_BEGIN_BYTES))
+        return SOPHIA_IPR_BUSY;
+    r = sophia_ip_begin_dma_buf(&img->producer, metadata, plane, source_fd, take_fd, now_ms,
+                                body, offer);
     if (r != SOPHIA_IPR_OK)
         return r;
     memset(&record, 0, sizeof(record));
