@@ -96,7 +96,7 @@ int64_t sophia_ss_image_timeout(const struct sophia_ss_image *img, uint64_t now_
     if (!img || !img->started)
         return -1;
     t = sophia_ip_timeout(&img->producer, now_ms);
-    if (ss_ring_mode(img)) {
+    if (ss_ring_active(img)) {
         int64_t ring = ss_ring_timeout(img, now_ms);
         if (ring >= 0 && (t < 0 || ring < t))
             t = ring;
@@ -129,6 +129,14 @@ static int start_producer(struct sophia_ss_image *img, uint64_t now)
     c.granted_kinds = ((w->capabilities & SEALED_BIT) ? SOPHIA_IC_KIND_BIT_SEALED : 0u) |
                       ((w->capabilities & DMA_BIT) ? SOPHIA_IC_KIND_BIT_DMABUF : 0u) |
                       ((w->capabilities & RING_BIT) ? SOPHIA_IC_KIND_BIT_OWNED_RING : 0u);
+    /* At r10 discovery may advertise DMA-BUF to every client while
+     * ChannelReady grants it only to some: the producer tolerates the
+     * advertised superset, ChannelReady narrows expect to the grant,
+     * and config.dma_buf alone selects the DMA lifecycle. A ring-only
+     * client granted 4 can therefore never begin a DMA source. */
+    if (c.revision == SOPHIA_SF_REVISION_OWNED_RING &&
+        (w->capabilities & RING_BIT))
+        c.granted_kinds |= SOPHIA_IC_KIND_BIT_DMABUF;
     if (sophia_ip_init(&img->producer, &c, now) != SOPHIA_IPR_OK) {
         /* A configuration that cannot serve this epoch: close as the caller. */
         memset(&img->producer, 0, sizeof(img->producer));
@@ -295,11 +303,12 @@ void ss_image_drive(struct sophia_ss *s, uint64_t now)
         else
             connecting(img, now);
     }
-    if (ss_ring_mode(img) && img->stage == STAGE_RUNNING && !ss_final(s))
+    if (ss_ring_active(img) && img->stage == STAGE_RUNNING && !ss_final(s))
         ss_ring_drive(img, now);
     if ((ss_final(s) || img->lost) && img->started) {
         sophia_ip_journal_lost(&img->producer);
-        ss_ring_lost(img);
+        if (ss_ring_active(img))
+            ss_ring_lost(img);
     }
 }
 
@@ -313,7 +322,9 @@ int ss_image_event(struct sophia_ss *s, const struct sophia_sf_record *e)
     if (!img || !sf_session_image_kind(e->header.kind))
         return 0;
     if (e->header.kind == SOPHIA_SS_RING_EVENT) {
-        if (img->started)
+        /* In DMA mode no ring exists to route to; the record is still
+         * consumed as an image record, never reinterpreted. */
+        if (img->started && ss_ring_active(img))
             ss_ring_event(img, s->files.event_bytes, (size_t)sf_get(s->files.event_bytes, 4));
         return 1;
     }
@@ -340,7 +351,7 @@ void ss_image_status(struct sophia_ss *s)
     /* Ring slots claim their own statuses. A DMA-BUF producer offer in
      * the same mixed connection is not a ring slot: its status belongs
      * to the producer, never to the RingProducer. */
-    if (ss_ring_mode(img) && ss_ring_status(img, e))
+    if (ss_ring_active(img) && ss_ring_status(img, e))
         return;
     v = &e->value.resource_status;
     if (v->status < 2 || v->status > 4 ||
@@ -458,8 +469,9 @@ int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *img, struct sophia_ic_
     s = img->session;
     if (!img->started || ss_final(s))
         return SOPHIA_IPR_CLOSED;
-    /* DMA-BUF exists only as the r10 opt-in beside the owned ring. */
-    if (!ss_ring_mode(img) || !img->config.dma_buf)
+    /* DMA-BUF exists only as the r10 opt-in; it selects the DMA
+     * producer lifecycle instead of the ring on this connection. */
+    if (!sf_session_image_r10(&s->files) || !img->config.dma_buf)
         return SOPHIA_IPR_REFUSED;
     if (s->state != SOPHIA_SS_READY)
         return SOPHIA_IPR_AGAIN;

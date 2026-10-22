@@ -36,6 +36,15 @@ int ss_ring_mode(const struct sophia_ss_image *img)
     return img && img->session && sf_session_image_r10(&img->session->files);
 }
 
+/* The DMA-BUF opt-in selects the DMA producer lifecycle on this
+ * connection: no ring is registered, driven or routed then, so ring
+ * and DMA offer ids are never live in two producers at once. Both
+ * protocol bits are still negotiated either way. */
+int ss_ring_active(const struct sophia_ss_image *img)
+{
+    return ss_ring_mode(img) && !img->config.dma_buf;
+}
+
 static void back_off(struct sophia_ss_image_ring *r, uint64_t now)
 {
     r->retry_delay = !r->retry_delay ? 4u : r->retry_delay < 256u ? 2u * r->retry_delay : 256u;
@@ -327,7 +336,7 @@ uint64_t sophia_ss_image_ring_capacity(const struct sophia_ss_image *img, uint32
 void *sophia_ss_image_ring_pixels(struct sophia_ss_image *img, uint32_t slot)
 {
     struct sophia_ss_image_ring *r;
-    if (!ss_ring_mode(img))
+    if (!ss_ring_active(img))
         return NULL;
     r = &img->ring;
     if (r->state != SOPHIA_SS_RING_READY || !r->memory.base || slot >= r->memory.slots ||
@@ -345,7 +354,7 @@ int sophia_ss_image_ring_offer(struct sophia_ss_image *img, uint32_t slot,
     struct sophia_or_offer o;
     uint8_t *word;
     unsigned i;
-    if (!ss_ring_mode(img) || !m || !offer)
+    if (!ss_ring_active(img) || !m || !offer)
         return SOPHIA_IPR_ARGUMENT;
     r = &img->ring;
     if (ss_final(img->session) || final(r))
@@ -433,7 +442,7 @@ int sophia_ss_image_ring_info(const struct sophia_ss_image *img, uint64_t offer,
                               struct sophia_ss_ring_offer_info *out)
 {
     const struct sophia_ss_ring_slot *s;
-    if (!img || !out)
+    if (!img || !out || !ss_ring_active(img))
         return SOPHIA_IPR_ARGUMENT;
     s = by_offer(img, offer);
     if (!s)
@@ -466,7 +475,7 @@ int sophia_ss_image_ring_cancel(struct sophia_ss_image *img, uint64_t offer, uin
     uint8_t bytes[SOPHIA_SS_IMAGE_BEGIN_BYTES];
     size_t n;
     (void)now_ms;
-    if (!ss_ring_mode(img) || !ticket)
+    if (!ss_ring_active(img) || !ticket)
         return SOPHIA_IPR_ARGUMENT;
     s = img->session;
     if (ss_final(s))
@@ -502,7 +511,7 @@ int sophia_ss_image_ring_cancel(struct sophia_ss_image *img, uint64_t offer, uin
 int sophia_ss_image_ring_forget(struct sophia_ss_image *img, uint64_t offer)
 {
     struct sophia_ss_ring_slot *s;
-    if (!ss_ring_mode(img))
+    if (!ss_ring_active(img))
         return SOPHIA_IPR_ARGUMENT;
     s = by_offer(img, offer);
     if (!s)

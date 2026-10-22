@@ -75,12 +75,11 @@ int sophia_ns_adopt_image(struct sophia_ns *n, struct sophia_ss_image *image, ui
     limits = sophia_ss_limits(n->ss);
     if (!limits || !ns_grant(n, limits->grant_connection_epoch, limits->grant_content_epoch))
         return SOPHIA_9P_INVALID;
-    if (ss_ring_mode(image)) {
+    if (ss_ring_active(image)) {
         struct sophia_ss_ring_offer_info info;
         if (sophia_ss_image_ring_info(image, offer, &info) == SOPHIA_IPR_OK)
             return adopt_ring(n, image, offer);
-        /* Not a ring offer: a DMA-BUF producer offer in the same mixed
-         * connection falls through to the producer rule below. */
+        /* Not a ring offer: falls through to the producer rule below. */
     }
     source = ip_slot(&image->producer, offer);
     /* A settled DMA capture requires Accepted plus SourceReleased with
