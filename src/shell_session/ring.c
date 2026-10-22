@@ -257,14 +257,17 @@ void ss_ring_event(struct sophia_ss_image *img, const uint8_t *b, size_t n)
  * cancellation may carry its own transaction. Failed ResourceRetire/Cancel
  * replies share the record, so every one is kept as evidence and none is a
  * contradiction; the exact SlotReleased decides. */
-void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *e)
+/* Returns 1 when the status names a live ring slot. Anything else is
+ * not ring evidence: in mixed mode it may belong to a DMA-BUF producer
+ * offer, and the caller routes it there instead. */
+int ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *e)
 {
     struct sophia_ss_image_ring *r = &img->ring;
     const struct sophia_sf_resource_status *v = &e->value.resource_status;
     unsigned i;
     if (final(r) || v->status < 2 || v->status > 4 ||
         !same_grant(img, v->grant_connection_epoch, v->grant_content_epoch))
-        return;
+        return 0;
     for (i = 0; i < SOPHIA_OR_MAX_SLOTS; i++) {
         struct sophia_ss_ring_slot *s = &r->slots[i];
         if (live(s) && s->offer.resource_id == v->resource_id &&
@@ -278,9 +281,10 @@ void ss_ring_status(struct sophia_ss_image *img, const struct sophia_sf_record *
             s->status = (uint8_t)(v->status == 2 ? SOPHIA_IPS_ACCEPTED
                                   : v->status == 3 ? SOPHIA_IPS_REJECTED
                                                    : SOPHIA_IPS_CANCELLED);
-            return;
+            return 1;
         }
     }
+    return 0;
 }
 
 int ss_ring_poll_out(const struct sophia_ss_image *img)

@@ -1181,9 +1181,12 @@ static void cancellation(void)
 }
 
 /* DMA-BUF begin (r10 mask 6): slice-one shape is enforced before fd
- * custody moves, and a non-dma-buf descriptor is refused with the
- * caller keeping it. Positive same-device evidence needs a real
- * dma-buf and lives in the native fixture, not here. */
+ * custody moves, and a malformed descriptor is refused with the caller
+ * keeping it. The fd check is lseek size plus the discovered byte
+ * limit, so a plain memfd of the right size is accepted here; device
+ * proof comes from the published format row and Session's device
+ * match, never from the fd. Positive same-device evidence needs a
+ * real dma-buf and lives in the native fixture, not here. */
 static void dma_buf_refusals(void)
 {
     struct sophia_ip p;
@@ -1219,11 +1222,8 @@ static void dma_buf_refusals(void)
     m.logical_bytes = 4 * 2 * 4;
     memset(&plane, 0, sizeof plane);
     plane.stride = 16;
-    fd = memfd_create("not-a-dmabuf", MFD_CLOEXEC);
+    fd = memfd_create("dma-shape-only", MFD_CLOEXEC);
     assert(fd >= 0 && ftruncate(fd, 4096) == 0);
-    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
-           SOPHIA_IPR_REFUSED);
-    assert(offer == 0 && m.offer == 0 && fcntl(fd, F_GETFD) >= 0); /* caller keeps it */
     m.modifier = 1;
     assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
            SOPHIA_IPR_REFUSED);
@@ -1235,7 +1235,13 @@ static void dma_buf_refusals(void)
     plane.stride = 8; /* below width * 4 */
     assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
            SOPHIA_IPR_REFUSED);
-    close(fd);
+    plane.stride = 16;
+    /* Right size and shape: accepted, and take_fd moves custody. */
+    assert(sophia_ip_begin_dma_buf(&p, &m, &plane, fd, 1, ++now, body, &offer) ==
+           SOPHIA_IPR_OK);
+    assert(offer != 0 && m.offer == offer); /* producer owns fd now */
+    sophia_ip_journal_lost(&p);
+    assert(sophia_ip_forget(&p, offer) == SOPHIA_IPR_OK);
     sophia_ip_close(&p);
     close(o.sock);
     channel_kinds = SOPHIA_IC_KIND_BIT_SEALED;

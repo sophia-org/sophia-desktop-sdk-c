@@ -139,6 +139,7 @@ int sophia_ip_discover(struct sophia_ip *p, const void *text, size_t text_bytes,
     }
     p->hello_timeout_ms = d.hello_timeout_ms;
     p->max_offers = d.max_offers;
+    p->max_dmabuf_source_bytes = l.value.limits.max_dmabuf_source_bytes;
     p->channel = SOPHIA_IPC_DISCOVERED;
     return SOPHIA_IPR_OK;
 }

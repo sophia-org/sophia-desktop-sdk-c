@@ -35,7 +35,7 @@ int ss_ring_mode(const struct sophia_ss_image *);
 void ss_ring_drive(struct sophia_ss_image *, uint64_t now_ms);
 void ss_ring_lost(struct sophia_ss_image *);
 void ss_ring_event(struct sophia_ss_image *, const uint8_t *, size_t);
-void ss_ring_status(struct sophia_ss_image *, const struct sophia_sf_record *);
+int ss_ring_status(struct sophia_ss_image *, const struct sophia_sf_record *);
 int ss_ring_poll_out(const struct sophia_ss_image *);
 int64_t ss_ring_timeout(const struct sophia_ss_image *, uint64_t now_ms);
 int ss_handoff(struct sophia_ss *);

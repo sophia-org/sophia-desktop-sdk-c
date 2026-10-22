@@ -4,10 +4,7 @@
 #ifdef __linux__
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/ioctl.h>
-#ifndef DMA_BUF_IOCTL_SYNC
-#define DMA_BUF_IOCTL_SYNC _IOW('b', 0, struct { uint64_t flags; })
-#endif
+#include <unistd.h>
 #endif
 
 #define REQUIRED_SEALS (F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL)
@@ -79,23 +76,30 @@ int sophia_ip_begin(struct sophia_ip *p, struct sophia_ic_metadata *metadata, in
     return SOPHIA_IPR_OK;
 }
 
-/* A dma-buf answers DMA_BUF_IOCTL_SYNC; ordinary files and memfds do not.
- * The declared plane must lie inside the buffer's actual size. */
-static int dma_buf_source(int fd, const struct sophia_ic_metadata *m,
+/* The fd's actual size comes from lseek SEEK_END, the same evidence the
+ * runtime and the Rust producer use; no ioctl can prove a dma-buf or a
+ * device here. The declared plane must lie inside that size, and the
+ * size must fit the discovered DMA source byte limit. All arithmetic
+ * is overflow-checked. */
+static int dma_buf_source(const struct sophia_ip *p, int fd,
+                          const struct sophia_ic_metadata *m,
                           const struct sophia_ic_plane *plane)
 {
 #ifdef __linux__
-    struct stat st;
-    struct {
-        uint64_t flags;
-    } sync = {0};
-    uint64_t last_row;
-    if (ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync) || fstat(fd, &st) || st.st_size < 0)
+    off_t end = lseek(fd, 0, SEEK_END);
+    uint64_t size, span, plane_end;
+    if (end < 0 || m->height == 0)
         return 0;
-    last_row = plane->offset +
-               plane->stride * (uint64_t)(m->height - 1) + (uint64_t)m->width * 4;
-    return last_row <= (uint64_t)st.st_size;
+    size = (uint64_t)end;
+    if (size > p->max_dmabuf_source_bytes)
+        return 0;
+    if (__builtin_mul_overflow((uint64_t)plane->stride, (uint64_t)(m->height - 1), &span) ||
+        __builtin_add_overflow(span, (uint64_t)m->width * 4, &span) ||
+        __builtin_add_overflow(plane->offset, span, &plane_end))
+        return 0;
+    return plane_end <= size;
 #else
+    (void)p;
     (void)fd;
     (void)m;
     (void)plane;
@@ -142,7 +146,7 @@ int sophia_ip_begin_dma_buf(struct sophia_ip *p, struct sophia_ic_metadata *meta
         m.modifier != 0 || m.plane_count != 1 || m.descriptor_count != 1 || m.stride != 0 ||
         plane->fd_index != 0 || plane->stride < (uint64_t)m.width * 4 ||
         sophia_ic_metadata_admissible(&m, &p->expect) != SOPHIA_IC_OK ||
-        !dma_buf_source(source_fd, &m, plane))
+        !dma_buf_source(p, source_fd, &m, plane))
         return SOPHIA_IPR_REFUSED;
     owned_fd = take_fd ? source_fd : fcntl(source_fd, F_DUPFD_CLOEXEC, 0);
     if (owned_fd < 0)

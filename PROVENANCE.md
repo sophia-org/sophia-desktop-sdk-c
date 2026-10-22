@@ -18,6 +18,15 @@ native GPU producer has been run against a live Sophia Session, and
 nothing here claims same-device capture qualification. Enablement
 waits on that comparison.
 
+Follow-up: the DMA fd check is lseek SEEK_END size plus the discovered
+DMA source byte limit with overflow-checked plane arithmetic (no
+ioctl probe; a memfd fixture proves wire shape and custody only). The
+adapter validates the exact published format row, r10 welcome and
+ImageBegin gates admit bit 14 beside the ring, DMA statuses route to
+the producer (never the RingProducer), and native adoption of a DMA
+offer requires Accepted plus SourceReleased with disposition
+Captured (2), not Retained (1).
+
 ## Shell r10 owned ring, 2026-10-21
 
 Pins the shell owned-ring contract from Sophia's signed commit

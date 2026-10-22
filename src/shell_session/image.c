@@ -337,10 +337,11 @@ void ss_image_status(struct sophia_ss *s)
         e->header.kind != SOPHIA_SF_RESOURCE_STATUS || e->header.sequence <= img->status_seen)
         return;
     img->status_seen = e->header.sequence;
-    if (ss_ring_mode(img)) {
-        ss_ring_status(img, e);
+    /* Ring slots claim their own statuses. A DMA-BUF producer offer in
+     * the same mixed connection is not a ring slot: its status belongs
+     * to the producer, never to the RingProducer. */
+    if (ss_ring_mode(img) && ss_ring_status(img, e))
         return;
-    }
     v = &e->value.resource_status;
     if (v->status < 2 || v->status > 4 ||
         sophia_ip_offer(&img->producer, v->transaction, &info) != SOPHIA_IPR_OK ||
@@ -415,6 +416,32 @@ int sophia_ss_image_begin(struct sophia_ss_image *img, struct sophia_ic_metadata
     return SOPHIA_IPR_OK;
 }
 
+/* The published formats object the adapter retained at discovery must
+ * carry one exact row for this source: same output, fourcc and
+ * modifier, opaque, and dimensions inside the row bounds. Anything
+ * else is refused before the producer takes the fd. */
+static int dma_format_row(const struct sophia_ss_image *img,
+                          const struct sophia_ic_metadata *m)
+{
+    struct sophia_ic_record record;
+    uint32_t i;
+    if (!img->formats_used ||
+        sophia_ic_record_decode(img->config.formats, img->formats_used, &record) !=
+            SOPHIA_IC_OK ||
+        record.header.kind != SOPHIA_IC_IMAGE_FORMATS)
+        return 0;
+    for (i = 0; i < record.value.formats.row_count; i++) {
+        struct sophia_ic_format_row row;
+        if (sophia_ic_format_row_at(&record.value.formats, i, &row) != SOPHIA_IC_OK)
+            return 0;
+        if (row.output == m->output && row.fourcc == m->source_format &&
+            row.modifier == m->modifier && row.flags == SOPHIA_IC_FORMAT_OPAQUE &&
+            m->width <= row.max_width && m->height <= row.max_height)
+            return 1;
+    }
+    return 0;
+}
+
 int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *img, struct sophia_ic_metadata *metadata,
                                   const struct sophia_ic_plane *plane, int source_fd, int take_fd,
                                   uint64_t now_ms, uint64_t *offer, uint64_t *ticket)
@@ -444,6 +471,8 @@ int sophia_ss_image_begin_dma_buf(struct sophia_ss_image *img, struct sophia_ic_
     /* Room first: once the producer owns the fd, admission cannot fail. */
     if (free_ticket == SOPHIA_IP_MAX_OFFERS || !ss_room(s, SOPHIA_SS_IMAGE_BEGIN_BYTES))
         return SOPHIA_IPR_BUSY;
+    if (!dma_format_row(img, metadata))
+        return SOPHIA_IPR_REFUSED;
     r = sophia_ip_begin_dma_buf(&img->producer, metadata, plane, source_fd, take_fd, now_ms,
                                 body, offer);
     if (r != SOPHIA_IPR_OK)

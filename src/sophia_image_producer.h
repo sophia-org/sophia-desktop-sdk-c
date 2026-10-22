@@ -125,6 +125,8 @@ struct sophia_ip {
     struct sophia_ic_expect expect;
     struct sophia_ip_slot slots[SOPHIA_IP_MAX_OFFERS];
     uint64_t last_now, last_pass, next_offer, hello_deadline_ms;
+    /* Discovered DMA source byte limit; 0 admits no DMA-BUF source. */
+    uint64_t max_dmabuf_source_bytes;
     uint32_t hello_timeout_ms, max_offers, ignored;
     int fd, have_pass;
     uint8_t channel, cause;
