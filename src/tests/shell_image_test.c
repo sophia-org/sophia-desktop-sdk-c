@@ -1108,6 +1108,7 @@ static void cancel_lost_with_session(void)
  * resource differs in ID or only in generation. */
 #include "native_image_adoption.h"
 #include "owned_ring_session.h"
+#include "owned_ring_worker.h"
 #include "dma_buf_session.h"
 
 int main(void)
@@ -1131,6 +1132,7 @@ int main(void)
     cancel_races();
     cancel_lost_with_session();
     owned_ring_session();
+    owned_ring_worker();
     dma_buf_session();
     assert(fd_count() == base);
     puts("shell_image_test: ok");

@@ -1,5 +1,15 @@
 # C and Rust SDK API parity
 
+## Worker-owned ring fills, 2026-10-30
+
+[OWNED-RING-WORKER.md](OWNED-RING-WORKER.md) records independent C scenarios
+paired with Rust `5d895652` / `4d81630` and the exact source bases. This is
+behavioural parity under documented caller ownership. C uses its existing
+pixels/offer split: callers exclude competing access, bind identity/geometry,
+report worker failure and defer image close until worker completion. Rust's
+owned loan enforces those storage properties. Do not claim automatic C loan
+enforcement, native qualification or performance from this gate.
+
 ## Shell r10 owned ring, 2026-10-21
 
 Contract: Sophia signed `c2193fa4b`, copied byte-for-byte into
