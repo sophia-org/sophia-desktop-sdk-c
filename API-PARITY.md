@@ -1805,8 +1805,16 @@ matching Rust entry points and a shared nine-record corpus in
 `spec/golden/sophia-shell-retire-v1.tsv`. Image mapping does not imply draw or
 retirement permission; unallocated later revisions establish no mapping.
 
-This is partial integration, not production qualification. The equivalent C
-session submission/tracking API, complete cumulative negotiation, host wiring
-and protected/native qualification remain unfinished. Neither this checkpoint
+The C session now queues a retiring Candidate through the existing bounded
+ticket and retry path. `shell_session_retire_test` checks atomic refusal and
+byte-identical EAGAIN retry against a scripted peer. The caller-owned bounded
+tracker in `sophia_shell_retire.h` covers Prepared, Presented, refusal, exact
+release, grant mismatch and revocation in `shell_retire_tracker_test`.
+These correspond to Rust's retiring-content submission and retirement tracker;
+the C tracker reports capacity exhaustion instead of allocating storage.
+
+This is partial integration, not production qualification. Complete cumulative
+negotiation, image-adapter integration, host wiring and protected/native
+qualification remain unfinished. Neither this checkpoint
 nor successful codec tests closes SDK parity. Existing clients keep explicit
 retirement. Do not enable a live W2 profile from this unreleased work.
