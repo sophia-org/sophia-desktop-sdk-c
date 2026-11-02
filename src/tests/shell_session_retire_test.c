@@ -91,8 +91,37 @@ static void retry_preserves_the_whole_intent(void)
     rig_close(&r);
 }
 
+static void exact_welcome(void)
+{
+    const struct { uint16_t revision; uint64_t required, granted; int valid; } cases[] = {
+        {12, CAPS, CAPS | 2, 1},
+        {10, CAPS, CAPS | 2, 0}, {11, CAPS, CAPS | 2, 0}, {13, CAPS, CAPS | 2, 0},
+        {12, CAPS, CAPS | 2 | (UINT64_C(1) << 9), 0},
+        {12, CAPS, CAPS & ~SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, 0},
+        {12, CAPS & ~SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, CAPS | 2, 0},
+        {10, CAPS & ~SOPHIA_SF_CAP_CONTENT_RETIRE_ON_PRESENT, CAPS | 2, 0}
+    };
+    size_t i;
+    for (i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        struct rig r;
+        struct sophia_ss_config offered = config;
+        struct sophia_sf_negotiated selected = welcome;
+        offered.offer.minimum_revision = 10;
+        offered.offer.maximum_revision = 13;
+        offered.offer.required_capabilities = cases[i].required;
+        selected.selected_revision = cases[i].revision;
+        selected.capabilities = cases[i].granted;
+        rig_start(&r, &offered);
+        r.p.welcome_override = &selected;
+        rig_settle(&r);
+        assert(sophia_ss_state(&r.s) == (cases[i].valid ? SOPHIA_SS_READY : SOPHIA_SS_FAILED));
+        rig_close(&r);
+    }
+}
+
 int main(void)
 {
+    exact_welcome();
     refused_admission_is_atomic();
     retry_preserves_the_whole_intent();
     return 0;
