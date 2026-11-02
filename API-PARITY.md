@@ -1797,3 +1797,16 @@ its unconsumed-event refill gate. These scheduling differences do not change cus
 Independent window/recovery tests pass locally; exact signed B3 revisions, export
 adoption and performance qualification remain pending. Diagnostic counts belong
 to scripted peers and instrumented captures, not a new production metrics API.
+# W2 integration checkpoint (unreleased)
+
+Shell r12 / bit 17 follows Sophia's allocation ledger. The candidate codec,
+exact retirement capability gate and r10/r11/r12 owned-ring mapping now have
+matching Rust entry points and a shared nine-record corpus in
+`spec/golden/sophia-shell-retire-v1.tsv`. Image mapping does not imply draw or
+retirement permission; unallocated later revisions establish no mapping.
+
+This is partial integration, not production qualification. The equivalent C
+session submission/tracking API, complete cumulative negotiation, host wiring
+and protected/native qualification remain unfinished. Neither this checkpoint
+nor successful codec tests closes SDK parity. Existing clients keep explicit
+retirement. Do not enable a live W2 profile from this unreleased work.
