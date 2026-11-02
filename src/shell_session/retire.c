@@ -1,4 +1,4 @@
-#include "sophia_shell_retire.h"
+#include "../sophia_shell_retire.h"
 #include <string.h>
 
 enum { FREE, NAMED, RETIRING };

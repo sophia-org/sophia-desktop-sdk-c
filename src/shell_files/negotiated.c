@@ -1,4 +1,4 @@
-#include "sophia_shell_files.h"
+#include "../sophia_shell_files.h"
 
 int sophia_sf_retire_on_present_enabled(uint16_t revision, uint64_t capabilities)
 {
