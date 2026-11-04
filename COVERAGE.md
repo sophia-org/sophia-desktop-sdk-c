@@ -173,3 +173,10 @@ There is no ambient sibling SDK checkout in the build inputs.
 submission receipts against the shared wire corpus and Rust implementation.
 See [API parity](API-PARITY.md#sft-passive-codec-parity-2026-11-04) for
 ownership, refusal coverage and the still-open owning-session/producer gates.
+
+## SFT typed transport
+
+Explicit r13 requests/events now pass through the owning file session's bounded
+queue and shared journal. Stream-credit ownership, embedded-image adapter
+reservation/settlement, real producers and production exports remain open;
+see [the paired checkpoint](API-PARITY.md#sft-typed-client-transport-2026-11-04).
