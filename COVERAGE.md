@@ -187,3 +187,9 @@ see [the paired checkpoint](API-PARITY.md#sft-typed-client-transport-2026-11-04)
 admission, exact terminal correlation and complete close draining. The image
 source ownership join and actual producers are still pending;
 [paired contract](API-PARITY.md#sft-owning-stream-credit-2026-11-04).
+
+SFT source join: `shell_image_test` includes `frame_image_session.h`, covering
+r13/D4 registration, whole-frame source/queue/credit admission, exact refusal,
+Prepared/status contradiction, two busy slots, slot release, wire refusal and
+unknown disconnect. Existing r9/r10 image and DMA tests remain in the same binary.
+No native or performance qualification is inferred.

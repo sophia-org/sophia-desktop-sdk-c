@@ -17,7 +17,7 @@ int sf_session_image_r9(const struct sophia_sf_client *c)
 int sf_session_image_r10(const struct sophia_sf_client *c)
 {
     return c->image_mode && c->negotiated &&
-           c->welcome.selected_revision == SOPHIA_SF_REVISION_OWNED_RING &&
+           (c->welcome.selected_revision == SOPHIA_SF_REVISION_OWNED_RING || sf_session_frame(c)) &&
            (c->welcome.capabilities & SOPHIA_SF_CAP_OWNED_RING);
 }
 

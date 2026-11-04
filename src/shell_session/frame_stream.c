@@ -1,3 +1,4 @@
+#include "internal.h"
 #include "../sophia_shell_frame_stream.h"
 #include "../sophia_shell_frames.h"
 #include <string.h>
@@ -43,13 +44,11 @@ int sophia_ss_frame_open(struct sophia_ss *s, struct sophia_ss_frame_stream *f,
     f->credit = f->closed_notice = 0;
     return 0;
 }
-int sophia_ss_frame_submit(struct sophia_ss *s, struct sophia_ss_frame_stream *f,
-                          const struct sophia_sf_record *r, uint64_t *ticket)
+int ss_frame_check(const struct sophia_ss_frame_stream *f, const struct sophia_sf_record *r)
 {
     const struct sophia_sf_candidate *c;
     const struct sophia_sft_key *k;
-    int status;
-    if (!s || !f || !r || !ticket || f->state != SOPHIA_SS_FRAME_OPEN || r->header.kind != SOPHIA_SFT_COMMIT)
+    if (!f || !r || f->state != SOPHIA_SS_FRAME_OPEN || r->header.kind != SOPHIA_SFT_COMMIT)
         return SOPHIA_9P_ARGUMENT;
     c = &r->value.frame.commit.candidate; k = &f->key;
     if (!k->connection_epoch || c->grant_connection_epoch != k->connection_epoch ||
@@ -59,13 +58,25 @@ int sophia_ss_frame_submit(struct sophia_ss *s, struct sophia_ss_frame_stream *f
         c->surfaces[0].allocation_id != k->allocation_id ||
         c->surfaces[0].allocation_generation != k->allocation_generation ||
         c->candidate_generation <= f->last_candidate) return SOPHIA_9P_ARGUMENT;
-    if (!sophia_ss_frame_has_credit(f) || f->pending_transaction) return SOPHIA_9P_BUSY;
-    status = sophia_ss_submit(s, r, 1, ticket);
-    if (status) return status;
+    return !sophia_ss_frame_has_credit(f) || f->pending_transaction ? SOPHIA_9P_BUSY : 0;
+}
+void ss_frame_submitted(struct sophia_ss_frame_stream *f, const struct sophia_sf_record *r)
+{
+    const struct sophia_sf_candidate *c = &r->value.frame.commit.candidate;
     f->last_candidate = f->pending_generation = c->candidate_generation;
     f->pending_transaction = c->transaction;
     f->prepared = f->credit = 0;
-    return 0;
+}
+int sophia_ss_frame_submit(struct sophia_ss *s, struct sophia_ss_frame_stream *f,
+                          const struct sophia_sf_record *r, uint64_t *ticket)
+{
+    int status;
+    if (!s || !ticket) return SOPHIA_9P_ARGUMENT;
+    status = ss_frame_check(f, r);
+    if (status) return status;
+    status = sophia_ss_submit(s, r, 1, ticket);
+    if (!status) ss_frame_submitted(f, r);
+    return status;
 }
 int sophia_ss_frame_close(struct sophia_ss *s, struct sophia_ss_frame_stream *f,
                          uint64_t transaction, uint64_t *ticket)

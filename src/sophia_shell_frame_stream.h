@@ -44,4 +44,17 @@ int sophia_ss_frame_drained(const struct sophia_ss_frame_stream *);
  * custody receipts never return credit. Owner deadlines stay opaque. */
 int sophia_ss_frame_observe(struct sophia_ss_frame_stream *, const struct sophia_sf_record *);
 void sophia_ss_frame_disconnect(struct sophia_ss_frame_stream *);
+/* Join a filled free ring slot to one whole Commit. No legacy Offer is sent.
+ * Requires r13 and exactly two slots; record must have has_image == 0.
+ * The SDK inserts the exact offer while encoding and restores the record.
+ * On refusal no credit, slot generation, offer or ticket is spent. On success
+ * stop writing the slot until exact SlotReleased (frame completion is not release).
+ * Returns 9P queue/argument errors; image metadata/availability is validated first.
+ * now_ms is the session's monotonic domain. The caller must not drive concurrently. */
+struct sophia_ss_image;
+struct sophia_ss_ring_image;
+int sophia_ss_frame_submit_ring(struct sophia_ss_image *, struct sophia_ss_frame_stream *,
+                               uint32_t slot, const struct sophia_ss_ring_image *,
+                               struct sophia_sf_record *, uint64_t now_ms,
+                               uint64_t *ticket, uint64_t *offer);
 #endif
