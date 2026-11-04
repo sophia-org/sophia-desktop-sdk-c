@@ -1,5 +1,15 @@
 # C and Rust SDK API parity
 
+## Worker-owned ring fills, 2026-10-30
+
+[OWNED-RING-WORKER.md](OWNED-RING-WORKER.md) records independent C scenarios
+paired with Rust `5d895652` / `4d81630` and the exact source bases. This is
+behavioural parity under documented caller ownership. C uses its existing
+pixels/offer split: callers exclude competing access, bind identity/geometry,
+report worker failure and defer image close until worker completion. Rust's
+owned loan enforces those storage properties. Do not claim automatic C loan
+enforcement, native qualification or performance from this gate.
+
 ## Shell r10 owned ring, 2026-10-21
 
 Contract: Sophia signed `c2193fa4b`, copied byte-for-byte into
@@ -1977,3 +1987,36 @@ busy slots, exact release, refusal/retry identities, Prepared-before-refusal,
 wrong correlation and disconnect. Rust also checks fill unwind. These are
 SDK conformance checks, not host import, real Lom/reference producer adoption,
 model trace validation, native qualification or a performance result.
+
+## SFT worker-fill integration, 2026-11-04
+
+The SFT branches now retain the worker-fill contract already used by Lom:
+Rust's signed `99b05e345be34678128733bf0166ded85b06239a` lineage and C's signed
+`9adb3c5b83a52baf2a8728cb10fcf821d1d6729b` caller-ownership proof. Rust offers
+`FrameStream::submit_ring_fill` for a returned `OwnedRingSlotFill`; C uses its
+existing `sophia_ss_frame_submit_ring` after synchronizing with the fill worker.
+Neither path adds a pixel copy or changes the wire grammar.
+
+Rust validates the producer instance and exact loan length before queueing. Both
+reserve the whole frame before publishing the source generation and spending
+credit. Queue pressure retains the completed bytes for retry without rerendering.
+No separate legacy Offer is emitted. Prepared and terminal credit remain separate
+from ResourceStatus/SlotReleased, and conflicting admission/refusal evidence
+keeps the source Unknown. Rust's legacy owned-fill commit is refused on r13, as
+its other legacy upload methods already are. Acquire and explicit abort still
+work; no abandoned worker mapping is reclaimed by protocol dispatch.
+
+The new paired tests drive the real 9P/image-channel fixtures while a worker is
+parked mid-fill, then join it, refuse admission under queue pressure, retry the
+same bytes and require exact source release. Rust also checks foreign and wrong-
+length loans, pre-admission refusal and contradictory Prepared evidence. The C
+worker obeys OWNED-RING-WORKER.md: it calls no SDK function and joins before close.
+Rust enforces unique loan ownership; C caller discipline remains a documented
+requirement, not an equivalent memory-safety guarantee.
+
+Evidence and exact paired revisions: `~/.local/state/sophia-frame-worker-fill-01`
+and its publication receipt. The r13 legacy fallback policy still needs to be
+joined with per-output stream drain during real producer integration; this API
+alone does not enable a legacy offer on an r13 connection. Real Lom/reference
+adoption, host negotiation, trace validation and native qualification remain
+open. No performance or production-enable claim.
